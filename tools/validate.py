@@ -22,6 +22,13 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 RECIPES = os.path.join(ROOT, 'data', 'recipes')
 INGREDIENTS = os.path.join(ROOT, 'data', 'ingredients')
 
+# Windows 控制台默认 cp1252,不重设的话打印中文直接 UnicodeEncodeError 崩掉
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
+
 EXPECTED = {'01': ('JC', 121), '02': ('CX', 86), '03': ('YZ', 77),
             '04': ('BF', 78), '05': ('XS', 78), '06': ('RH', 95)}
 
@@ -263,8 +270,18 @@ def main():
                 if len(r) > 1 and r[1] == 'scratch':
                     warn('%s:%d %s 变体表里写了 scratch —— 主表那行就是 scratch,不该重复' % (base, lineno, r[0]))
                 for nm, iid in parse_cell(r[2] if len(r) > 2 else ''):
-                    if iid != '?' and iid not in known:
+                    if iid == '?':
+                        continue
+                    if iid not in known:
                         err('%s:%d 变体 %s 悬空 id:%s[%s]' % (base, lineno, r[0], nm, iid))
+                    else:
+                        # 变体表也要做别名反查 —— 上一轮漏了,结果两处失配藏在这张表里没被发现
+                        names = set()
+                        for _f, _n, _a in dict_ids[iid]:
+                            names.add(_n)
+                            names.update(x.strip() for x in re.split(r'[/·、]', _a) if x.strip())
+                        if nm not in names:
+                            alias_gap[(iid, nm)].append('%s %s变体' % (base[:2], r[0]))
 
         grand += len(seen)
         flag = 'OK ' if len(seen) == want else '✗  '
