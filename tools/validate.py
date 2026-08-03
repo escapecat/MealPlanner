@@ -160,6 +160,7 @@ def check_qty_syntax(cell):
 
 def main():
     dict_ids = load_dicts()
+    alias_gap = defaultdict(list)
 
     # 同 id 在多处建条
     dup = {k: v for k, v in dict_ids.items() if len(v) > 1}
@@ -221,6 +222,15 @@ def main():
                     continue
                 if iid not in known:
                     err('%s:%d %s 悬空 id:%s[%s]' % (base, lineno, rid, nm, iid))
+                else:
+                    # 菜谱里的显示名必须能在字典的 名称/别名 里找到,否则「名称→id」反查会失配。
+                    # 抽查「圆白菜/卷心菜/包菜」这种三组样本不如全库扫一遍。
+                    names = set()
+                    for _f, _n, _a in dict_ids[iid]:
+                        names.add(_n)
+                        names.update(x.strip() for x in re.split(r'[/·、]', _a) if x.strip())
+                    if nm not in names:
+                        alias_gap[(iid, nm)].append('%s %s' % (base[:2], rid))
 
             # 两列重复 —— 采购量翻倍的那个 bug。`?` 是未匹配占位符,不算重复
             both = ({i for _, i in fids} & {i for _, i in sids}) - {'?'}
@@ -264,6 +274,11 @@ def main():
 
     print('-' * 56)
     print('合计 %d 道(应 535)· 字典 %d 个 id' % (grand, len(known)))
+
+    if alias_gap:
+        notes.append('菜谱显示名不在字典别名列里:%d 组 —— 「名称→id」反查会失配' % len(alias_gap))
+        for (iid, nm), where in sorted(alias_gap.items())[:40]:
+            notes.append('    %-22s 用了「%s」  %s' % (iid, nm, ' '.join(where[:4])))
 
     for label, items in (('错误', errors), ('告警', warnings), ('提示', notes)):
         if items:
