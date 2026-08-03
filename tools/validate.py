@@ -234,7 +234,8 @@ def main():
                     warn('%s:%d %s %s列括号挤进克数位:%s' % (base, lineno, rid, col, b))
 
             # 菜名说明有主食,食材列却没有 主食 角色 —— 06 发现天丼没米饭,这类靠眼睛看不出来
-            if STAPLE_NAME.search(r[1]) and '主食' not in food:
+            if (STAPLE_NAME.search(r[1]) and '主食' not in food
+                    and not TOPPING_SUFFIX.search(r[1])):
                 warn('%s:%d %s「%s」菜名含主食字样,食材列却没有「主食」角色' % (base, lineno, rid, r[1]))
 
         all_recipe_ids[prefix] = seen
