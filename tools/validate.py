@@ -103,12 +103,32 @@ def load_dicts():
 # 名称[id] 克数 角色    名称部分不许含 [ ] ( ) 空格
 ITEM = re.compile(r'([^\[\]()\s·]+)\[([a-z0-9_?]+)\]')
 
+# 菜名里出现这些字,基本可以断定该有主食。「粉」排除掉调味用法(淀粉/米粉蒸肉),
+# 所以只取成词的写法;宁可漏报也别误报 —— 前面被正则骗过三次了。
+STAPLE_NAME = re.compile(
+    # 光杆「饭」是 06 补的 —— 原来只收组合词,漏了「咖喱牛肉饭」。
+    # 但「电饭煲」里也有个饭,「汉堡排」是肉饼不是汉堡 —— 两个负向断言堵掉这两类误报。
+    r'(?<!电)饭|丼|粥'
+    r'|炒面|拌面|汤面|捞面|拉面|烩面|刀削面|手擀面|意面|冷面|凉面|米线|河粉|米粉|粿条|炒粉'
+    r'|三明治|汉堡(?!排)|吐司|卷饼|夹馍|馅饼|烧饼|火烧|馒头|花卷|包子|饺|馄饨|抄手|烧麦|烧卖'
+)
+
+# 菜名以这些收尾 = 明说自己只是浇头/配料,本来就不含主食
+TOPPING_SUFFIX = re.compile(r'(菜码|浇头|臊子|卤|馅|酱)$')
+
 
 def parse_cell(cell):
     """返回 [(名称, id)],以及名称非法的告警在外面做"""
     if not cell or cell in ('—', '-', ''):
         return []
     return ITEM.findall(cell)
+
+
+def count_orphan_ids(cell):
+    """ITEM 正则要求名称位干净,名称里有括号时整项会被**静默丢弃**。
+    02 就是这么让 `外婆菜(袋装)[waipocai]` 躲过两列重复检查的 —— 静默丢弃比报错危险,
+    所以单独数一遍 [id] 的总数,对不上就说明有项没被解析出来。"""
+    return len(re.findall(r'\[[a-z0-9_?]+\]', cell))
 
 
 def check_name_syntax(cell):
@@ -120,6 +140,19 @@ def check_name_syntax(cell):
         seg = re.split(r'·| 或 ', left)[-1].strip()
         if re.search(r'[()（）]', seg) or ' ' in seg:
             bad.append(seg + '[' + m.group(1) + ']')
+    return bad
+
+
+# 克数位:180g / 2个 / 适量 / 共250g / 8只 ……  括号开头说明尾注挤进了克数位
+QTY_BAD = re.compile(r'^[（(]')
+
+
+def check_qty_syntax(cell):
+    """括号写在 [id] 后面时,克数位会被解析成「(抹面)」—— 名称干净但一样是坏数据"""
+    bad = []
+    for m in re.finditer(r'\[([a-z0-9_?]+)\]\s*([^·]*)', cell):
+        if QTY_BAD.match(m.group(2).strip()):
+            bad.append('[%s]%s' % (m.group(1), m.group(2).strip()[:16]))
     return bad
 
 
@@ -176,6 +209,13 @@ def main():
             fids = parse_cell(food)
             sids = parse_cell(seasoning)
 
+            # 解析出的项数对不上 [id] 总数 = 有项被静默丢弃(名称位有括号)
+            for cell, got, col in ((food, fids, '食材'), (seasoning, sids, '调料')):
+                n_ids = count_orphan_ids(cell)
+                if n_ids != len(got):
+                    err('%s:%d %s %s列有 %d 项没被解析出来(名称位非法,会静默漏检)'
+                        % (base, lineno, rid, col, n_ids - len(got)))
+
             for nm, iid in fids + sids:
                 if iid == '?':
                     continue
@@ -190,6 +230,12 @@ def main():
             for cell, col in ((food, '食材'), (seasoning, '调料')):
                 for b in check_name_syntax(cell):
                     warn('%s:%d %s %s列名称含括号或空格:%s' % (base, lineno, rid, col, b))
+                for b in check_qty_syntax(cell):
+                    warn('%s:%d %s %s列括号挤进克数位:%s' % (base, lineno, rid, col, b))
+
+            # 菜名说明有主食,食材列却没有 主食 角色 —— 06 发现天丼没米饭,这类靠眼睛看不出来
+            if STAPLE_NAME.search(r[1]) and '主食' not in food:
+                warn('%s:%d %s「%s」菜名含主食字样,食材列却没有「主食」角色' % (base, lineno, rid, r[1]))
 
         all_recipe_ids[prefix] = seen
         nvar = 0
