@@ -397,8 +397,7 @@ var RoundsUI = (function () {
           class: 'btn ghost',
           style: 'width:auto;padding:4px 8px;font-size:11px;flex:0 0 auto',
           onclick: function () {
-            var v = prompt('这包实际是多少 ' + it.unit + '?
-改了以后排菜会更准,不改也不影响记账。',
+            var v = prompt('这包实际是多少 ' + it.unit + '?改了以后排菜会更准,不改也不影响记账。',
                            it.hintPack);
             if (v == null) return;
             var n = parseFloat(v);
