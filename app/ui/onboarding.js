@@ -12,7 +12,7 @@ var Onboarding = (function () {
   var DEFAULTS = {
     sex: 'male', age: null, heightCm: null, weightKg: null,
     activity: 'sedentary', goal: 'maintain',
-    mealsPerDay: 3,
+    breakfast: 'normal',
     equipment: ['炒锅', '汤锅'],
     blacklist: [],
     maxSpicy: 3,
@@ -82,14 +82,14 @@ var Onboarding = (function () {
       box.appendChild(h('div', { class: 'hint' }, ['填完年龄 / 身高 / 体重就会算出你的目标']));
       return;
     }
-    var pm = Profile.perMeal(d, state.mealsPerDay);
+    var pm = Profile.perPlannedMeal(d, state.breakfast);
     box.appendChild(h('div', {}, [
       h('div', {}, ['基础代谢 ' + Profile.bmr(state) + ' kcal · 日常消耗 ' + d.tdee + ' kcal']),
       h('div', { style: 'margin-top:6px;font-weight:600' },
         ['每日目标 ' + d.kcal + ' kcal · 蛋白 ' + d.protein + 'g · 蔬菜 ' + d.veg + 'g']),
-      h('div', { class: 'hint' },
-        ['按一天 ' + pm.basedOn + ' 顿摊:单顿约 ' + pm.kcal + ' kcal · 蛋白 '
-          + pm.protein + 'g · 蔬菜 ' + pm.veg + 'g']),
+      h('div', { style: 'margin-top:6px' },
+        ['要排的午饭 / 晚饭各约 ' + pm.kcal + ' kcal · 蛋白 ' + pm.protein + 'g · 蔬菜 ' + pm.veg + 'g']),
+      h('div', { class: 'hint' }, [pm.note]),
     ]));
     if (d.kcalFloored) {
       box.appendChild(h('div', { class: 'note warn', style: 'margin-top:10px' },
@@ -153,14 +153,17 @@ var Onboarding = (function () {
       h('div', { class: 'hint' }, [(Profile.GOAL[state.goal] || {}).desc || '']),
     ]));
     c1.appendChild(h('div', { class: 'row' }, [
-      h('label', { class: 'lab' }, ['一天吃几顿?']),
-      seg('mealsPerDay', [
-        { value: 2, label: '2 顿' }, { value: 3, label: '3 顿' },
+      h('label', { class: 'lab' }, ['早饭大概吃多少?']),
+      seg('breakfast', Object.keys(Profile.BREAKFAST).map(function (k) {
+        return { value: k, label: Profile.BREAKFAST[k].label };
+      })),
+      h('div', { class: 'hint' }, [
+        (Profile.BREAKFAST[state.breakfast] || {}).desc +
+        ((Profile.BREAKFAST[state.breakfast] || {}).kcal
+          ? ' · 约 ' + Profile.BREAKFAST[state.breakfast].kcal + ' kcal' : ''),
       ]),
       h('div', { class: 'hint' }, [
-        state.mealsPerDay === 2
-          ? '不吃早饭 —— 那午饭晚饭要扛下全天的量,每顿会明显比按三顿摊的大'
-          : '早饭在外面买也算 —— 这个应用只排周末的午饭和晚饭,但早饭吃不吃决定了这两顿各占多少',
+        '这个应用只排午饭和晚饭 —— 问早饭是为了知道那两顿该分多少,不是要管你早上吃什么',
       ]),
     ]));
     w.appendChild(c1);
@@ -256,7 +259,7 @@ var Onboarding = (function () {
     Store.set('profile', {
       sex: state.sex, age: state.age, heightCm: state.heightCm,
       activity: state.activity, goal: state.goal,
-      mealsPerDay: state.mealsPerDay,
+      breakfast: state.breakfast,
       createdAt: now, updatedAt: now,
     });
     // 体重存成时间序列 —— 体重变则 TDEE 变则目标重算(DESIGN 第七节)

@@ -102,9 +102,9 @@
         h('div', { style: 'font-weight:600' }, ['每日目标']),
         h('div', {}, [d.kcal + ' kcal · 蛋白 ' + d.protein + 'g · 蔬菜 ' + d.veg + 'g']),
         h('div', { class: 'hint' }, (function () {
-          var pm = Profile.perMeal(d, p.mealsPerDay);
-          return ['按一天 ' + pm.basedOn + ' 顿摊:单顿 ' + pm.kcal + ' kcal · 蛋白 '
-                  + pm.protein + 'g · 蔬菜 ' + pm.veg + 'g'];
+          var pm = Profile.perPlannedMeal(d, p.breakfast);
+          return ['午饭 / 晚饭各 ' + pm.kcal + ' kcal · 蛋白 ' + pm.protein
+                  + 'g · 蔬菜 ' + pm.veg + 'g  ——  ' + pm.note];
         })()),
         h('div', { class: 'hint' }, [
           '基础代谢 ' + Profile.bmr(Object.assign({}, p, { weightKg: kg })) +

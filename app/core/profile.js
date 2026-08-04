@@ -52,22 +52,49 @@ var Profile = (function () {
       veg: 400,                                       // g/天,WHO 建议下限
       // 碳水不设目标只设上限:蛋白和蔬菜先满足,剩下的热量给主食
       carbCapKcal: Math.round(Math.max(kcal, floor) * 0.5),
-      mealsPerDay: p.mealsPerDay || 3,
+      breakfast: p.breakfast || 'normal',
     };
   }
 
-  /** 单顿目标。
-   *
-   * ⚠️ `mealsPerDay` 必须问,不能默认 3。
-   * 不吃早饭的人,两顿要扛下全天的量 —— 按三顿摊会让每顿少 1/3。
-   * 更糟的是后果会被误诊:用户说「不够吃」,系统以为是偏好问题去调构成,
-   * 而实际是这里一开始就除错了数。
-   *
-   * 这个应用只排周末的午饭+晚饭,早饭不管 —— 但早饭吃不吃,决定了午晚饭各该占多少。
-   */
+  // 早饭档位。**这个应用只排午饭和晚饭**,早饭它管不着也看不见 ——
+  // 但早饭吃多少直接决定这两顿该分到多少,所以必须问一个粗档。
+  //
+  // ⚠️ 为什么不是问「一天吃几顿」再除以 n:那假设三顿一样大,而早饭从来不是。
+  //    一个包子加豆浆约 350 kcal,按 1593÷3=531 算,午晚饭会各少 90 kcal 而你不知道为什么。
+  //
+  // ⚠️ 这几个数是估计值,而且**唯一能校准它的是体重趋势** ——
+  //    午晚饭由应用排、能算准,早饭是唯一的未知数。所以体重没按预期走时,
+  //    第一个该怀疑的就是这一档选错了,而不是去改午晚饭的目标。
+  var BREAKFAST = {
+    none:   { kcal: 0,   protein: 0,  label: '不吃',   desc: '午晚两顿分掉全天的量' },
+    light:  { kcal: 150, protein: 8,  label: '很少',   desc: '一杯豆浆 / 一个鸡蛋 / 一根香蕉' },
+    normal: { kcal: 350, protein: 12, label: '一般',   desc: '包子豆浆 / 麦片牛奶 / 三明治' },
+    big:    { kcal: 550, protein: 20, label: '丰盛',   desc: '两个包子+鸡蛋+豆浆 / 全套西式早餐' },
+  };
+
+  /** 这个应用要排的那两顿(午+晚)各自的目标。
+   *  = (全天目标 − 早饭) ÷ 2 ,不是 全天 ÷ 3。 */
+  function perPlannedMeal(daily, breakfastKey) {
+    if (!daily) return null;
+    var b = BREAKFAST[breakfastKey] || BREAKFAST.normal;
+    var kcal = Math.max(daily.kcal - b.kcal, 300);      // 不至于算出荒谬的小值
+    var protein = Math.max(daily.protein - b.protein, 20);
+    return {
+      kcal: Math.round(kcal / 2),
+      protein: Math.round(protein / 2),
+      veg: Math.round(daily.veg / 2),   // 蔬菜基本不靠早饭,午晚各半
+      breakfast: b,
+      note: b.kcal
+        ? '扣掉早饭约 ' + b.kcal + ' kcal 之后,午晚两顿平分'
+        : '不吃早饭,午晚两顿分掉全天的量',
+    };
+  }
+
+  /** 保留:按 n 顿平均摊。只在需要「一顿的平均量」这种粗略概念时用,
+   *  排菜一律用 perPlannedMeal —— 平均摊会把早饭当成和正餐一样大。 */
   function perMeal(daily, mealsPerDay) {
     if (!daily) return null;
-    var n = mealsPerDay || daily.mealsPerDay || 3;
+    var n = mealsPerDay || 3;
     return {
       kcal: Math.round(daily.kcal / n),
       protein: Math.round(daily.protein / n),
@@ -125,9 +152,9 @@ var Profile = (function () {
   }
 
   return {
-    ACTIVITY: ACTIVITY, GOAL: GOAL,
+    ACTIVITY: ACTIVITY, GOAL: GOAL, BREAKFAST: BREAKFAST,
     bmr: bmr, tdee: tdee,
-    dailyTargets: dailyTargets, perMeal: perMeal,
+    dailyTargets: dailyTargets, perMeal: perMeal, perPlannedMeal: perPlannedMeal,
     adjustComposition: adjustComposition, validate: validate,
   };
 })();
