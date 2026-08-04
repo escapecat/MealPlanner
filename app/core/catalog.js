@@ -39,17 +39,11 @@ var Catalog = (function () {
     return _ingIndex[id] || null;
   }
 
-  /** 某道菜需要的厨具,在「拥有 + 可替代」下能不能满足 */
-  function equipmentOK(recipe, owned) {
-    var have = {};
-    (owned || []).forEach(function (e) { have[e] = true; });
-    return (recipe.equipmentRequired || []).every(function (need) {
-      if (have[need]) return true;
-      // 可替代组:组内任意一个有,就算满足
-      return (recipe.equipmentAlt || []).some(function (group) {
-        return group.indexOf(need) >= 0 && group.some(function (g) { return have[g]; });
-      });
-    });
+  /** 某道菜需要的厨具,在「拥有 + 菜谱级可替代 + 通用替代矩阵」下能不能满足。
+   *  通用替代看 core/equipment.js —— 炒锅/汤锅/不粘锅在多数做法下能互顶,
+   *  但爆炒必须有炒锅。这条规则是系统性的,不该逐道菜去标。 */
+  function equipmentOK(recipe, owned, extraRequired) {
+    return Equipment.check(recipe, owned, extraRequired).ok;
   }
 
   /** 这道菜的某个 variant 里有没有黑名单食材 */
@@ -80,8 +74,7 @@ var Catalog = (function () {
       if (variantHasBlacklisted(v, cfg.blacklist)) return false;
       // variant 自己也可能要额外厨具(速冻版就不需要擀面杖)
       if (v.equipmentRequired && v.equipmentRequired.length) {
-        if (!equipmentOK({ equipmentRequired: v.equipmentRequired,
-                           equipmentAlt: recipe.equipmentAlt }, cfg.equipment)) return false;
+        if (!equipmentOK(recipe, cfg.equipment, v.equipmentRequired)) return false;
       }
       return true;
     });
