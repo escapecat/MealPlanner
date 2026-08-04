@@ -164,6 +164,25 @@ def parse_items(s):
     return out
 
 
+def parse_unit_conv(s):
+    """「1个≈50g(带壳;去壳约45g)」→ {'个': 50}
+    多种计件方式用 ` · ` 分隔:「1片≈35g · 1条≈500g」→ {'片':35, '条':500}
+
+    markdown 那一列是给人读的(带括号里的区间和口径说明),
+    这里抠出机器要的部分,原文另存 unitConvRaw 供 UI 显示 —— 不确定性不能在转换时丢掉。
+    """
+    out = {}
+    if not s:
+        return out
+    for part in s.split('·'):
+        m = re.search(r'(\d+(?:\.\d+)?)\s*([^\d\s≈~=]+?)\s*[≈~=]\s*(\d+(?:\.\d+)?)\s*(g|ml)', part)
+        if m:
+            n, unit, grams = float(m.group(1)), m.group(2).strip(), float(m.group(3))
+            if n:
+                out[unit] = round(grams / n, 2)
+    return out
+
+
 def build_ingredients():
     rows, seen = [], {}
     for p in sorted(glob.glob(os.path.join(INGREDIENTS, '0*.md'))):
@@ -193,6 +212,8 @@ def build_ingredients():
                     'hasBones': yes(cell(r, h, '有刺')) if '有刺' in h else None,
                     'vegLevel': cell(r, h, '素食等级') or None,
                     'costTier': int(num(cell(r, h, '成本档'), 0) or 0) or None,
+                    'unitConv': parse_unit_conv(cell(r, h, '单位换算')),
+                    'unitConvRaw': cell(r, h, '单位换算') or None,
                     'source': src,
                     'isPrepared': prepared,
                     'note': cell(r, h, '备注'),
@@ -353,19 +374,34 @@ def main():
     print('\n菜谱 %d 道 · variants %d 个(含 scratch 基础档)· 食材 %d 条 · 包装 %d 条'
           % (len(recs), nvar, len(ings), len(pkgs)))
 
-    # 计件项:qty 有值但 grams 没有 —— 求解器算不了重量,得靠字典补单位换算
+    # 计件项:qty 有值但 grams 没有,且字典也没给单位换算 —— 求解器算不出重量
+    conv = {}
+    for i in ings:
+        if i.get('unitConv'):
+            conv[i['id']] = i['unitConv']
     need = {}
     for r in recs:
         for v in r['variants']:
             for it in v['ingredients'] + v['seasonings']:
-                if it['unit'] and it['unit'] not in ('g', 'ml') and it['grams'] is None:
-                    need.setdefault(it['ids'][0], [it['unit'], 0])[1] += 1
+                u = it['unit']
+                if not u or u in ('g', 'ml') or it['grams'] is not None:
+                    continue
+                iid = it['ids'][0]
+                if conv.get(iid, {}).get(u):
+                    continue            # 字典给了换算,能算
+                need.setdefault(iid, [u, 0])[1] += 1
     if need:
-        print('\n📌 %d 个食材按件计量且没给克重,字典需要补「单位换算」才能算采购量:' % len(need))
-        for iid, (u, n) in sorted(need.items(), key=lambda x: -x[1][1])[:15]:
-            print('   %-26s %s × %d 处' % (iid, u, n))
-        if len(need) > 15:
-            print('   ...还有 %d 个' % (len(need) - 15))
+        print('\n📌 %d 个食材按件计量、字典也没给单位换算 —— 求解器算不出采购量:' % len(need))
+        for iid, (u, n) in sorted(need.items(), key=lambda x: -x[1][1]):
+            ing = next((i for i in ings if i['id'] == iid), None)
+            why = ''
+            if ing and ing.get('note'):
+                m = re.search(r'(单位换算[^。;]*)', ing['note'])
+                if m:
+                    why = '  ← ' + m.group(1)[:40]
+            print('   %-26s %s × %d 处%s' % (iid, u, n, why))
+    else:
+        print('\n所有按件计量的食材都有单位换算,求解器可以算采购量。')
 
     dangling = [w for w in warnings if '悬空' in w]
     if warnings:
