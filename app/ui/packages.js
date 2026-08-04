@@ -278,6 +278,40 @@ var PackagesUI = (function () {
       '。没核对的按估计值算,采购量可能偏差。',
     ]));
 
+    // ⚠️ 不要求你核实 135 条 —— 那不现实。
+    //    一条规格的影响力 = 用到它的菜数 × 一道菜用不完的比例。
+    //    黄瓜 500g/包而一道菜用 90g,这条错 20% 会明显改变采购建议;
+    //    八角 30g/包一次用 2g,错一倍也无所谓。所以只给最值得看的几条。
+    if (typeof SpecPriority !== 'undefined') {
+      var cfg = Store.get('config', {}) || {};
+      var top = SpecPriority.rank({
+        equipment: cfg.equipment, maxSpicy: cfg.maxSpicy,
+        maxActiveMinutes: cfg.maxActiveMinutes,
+        blacklist: Catalog.expandBlacklist(cfg.blacklist),
+      }, 6);
+      if (top.length) {
+        var pri = h('div', { class: 'card' });
+        pri.appendChild(h('div', { style: 'font-weight:600;margin-bottom:4px' },
+          ['下次逛超市,先核实这几条']));
+        pri.appendChild(h('div', { class: 'hint', style: 'margin-bottom:10px' },
+          ['按「影响力 = 用到它的菜数 × 一道菜用不完的比例」排的。' +
+           '剩下 120 多条影响很小,不用管。']));
+        top.forEach(function (t, i) {
+          var row = h('div', { style: 'margin-bottom:10px' });
+          row.appendChild(h('div', {}, [
+            (i + 1) + '. ' + t.name + ' —— 现在按 ' + t.packSize + t.unit + ' 算 ',
+          ]));
+          row.appendChild(h('div', { class: 'hint' }, [t.why]));
+          row.appendChild(h('button', {
+            class: 'btn ghost', style: 'width:auto;padding:4px 10px;font-size:12px;margin-top:4px',
+            onclick: function () { q = t.name; filter = 'all'; render(); },
+          }, ['去改这条']));
+          pri.appendChild(row);
+        });
+        w.appendChild(pri);
+      }
+    }
+
     if (adding) {
       w.appendChild(h('div', { id: 'addform' }));
       el.appendChild(w);
