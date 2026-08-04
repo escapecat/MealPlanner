@@ -1,0 +1,142 @@
+// 从菜谱库/食材字典推导出来的候选池与过滤 —— 纯函数,不碰 DOM。
+//
+// 为什么不硬编码厨具/味型清单:数据层那条「能从字典推导的不重复存」原则同样适用于 UI。
+// 库还在长,硬编码的勾选项迟早和数据对不上;推导出来的永远一致。
+
+var Catalog = (function () {
+
+  function tally(getter) {
+    var m = {};
+    RECIPES.forEach(function (r) {
+      (getter(r) || []).forEach(function (k) {
+        if (k && k !== '—') m[k] = (m[k] || 0) + 1;
+      });
+    });
+    return Object.keys(m).map(function (k) { return { name: k, count: m[k] }; })
+                         .sort(function (a, b) { return b.count - a.count; });
+  }
+
+  var _eq, _method, _flavor, _ingIndex;
+
+  function equipment() {
+    if (!_eq) _eq = tally(function (r) { return r.equipmentRequired; });
+    return _eq;
+  }
+  function methods() {
+    if (!_method) _method = tally(function (r) { return [r.method]; });
+    return _method;
+  }
+  function flavors() {
+    if (!_flavor) _flavor = tally(function (r) { return r.flavor; });
+    return _flavor;
+  }
+
+  function ingredient(id) {
+    if (!_ingIndex) {
+      _ingIndex = {};
+      INGREDIENTS.forEach(function (i) { _ingIndex[i.id] = i; });
+    }
+    return _ingIndex[id] || null;
+  }
+
+  /** 某道菜需要的厨具,在「拥有 + 可替代」下能不能满足 */
+  function equipmentOK(recipe, owned) {
+    var have = {};
+    (owned || []).forEach(function (e) { have[e] = true; });
+    return (recipe.equipmentRequired || []).every(function (need) {
+      if (have[need]) return true;
+      // 可替代组:组内任意一个有,就算满足
+      return (recipe.equipmentAlt || []).some(function (group) {
+        return group.indexOf(need) >= 0 && group.some(function (g) { return have[g]; });
+      });
+    });
+  }
+
+  /** 这道菜的某个 variant 里有没有黑名单食材 */
+  function variantHasBlacklisted(variant, blacklist) {
+    if (!blacklist || !blacklist.length) return false;
+    var bad = {};
+    blacklist.forEach(function (b) { bad[b] = true; });
+    return (variant.ingredients || []).concat(variant.seasonings || []).some(function (it) {
+      // 「或」组:只有全部选项都被拉黑才算不能做
+      return it.ids.length > 0 && it.ids.every(function (id) { return bad[id]; });
+    });
+  }
+
+  /**
+   * 在给定配置下,这道菜有哪些 variant 可做。
+   * 返回可做的 variant 数组(空数组 = 这道菜做不了)。
+   * ⚠️ 按 variant 判而不是按菜判 —— 这正是 prepLevel 存在的意义:
+   *    手工水饺做不了(没时间),速冻水饺能做,不该把整道菜滤掉。
+   */
+  function availableVariants(recipe, cfg) {
+    cfg = cfg || {};
+    if (!equipmentOK(recipe, cfg.equipment)) return [];
+    if (cfg.maxSpicy != null && recipe.spicy > cfg.maxSpicy) return [];
+
+    return (recipe.variants || []).filter(function (v) {
+      if (cfg.maxActiveMinutes != null && v.activeMinutes > cfg.maxActiveMinutes) return false;
+      if (cfg.maxDifficulty != null && v.difficulty > cfg.maxDifficulty) return false;
+      if (variantHasBlacklisted(v, cfg.blacklist)) return false;
+      // variant 自己也可能要额外厨具(速冻版就不需要擀面杖)
+      if (v.equipmentRequired && v.equipmentRequired.length) {
+        if (!equipmentOK({ equipmentRequired: v.equipmentRequired,
+                           equipmentAlt: recipe.equipmentAlt }, cfg.equipment)) return false;
+      }
+      return true;
+    });
+  }
+
+  /** 配置下可做的菜数。冷启动时实时显示,让取舍立刻看得见。 */
+  function countAvailable(cfg) {
+    var dishes = 0, variants = 0;
+    RECIPES.forEach(function (r) {
+      if (r.type === 'prep') return;         // prep 产出配料不是一顿饭,不计入
+      var vs = availableVariants(r, cfg);
+      if (vs.length) { dishes++; variants += vs.length; }
+    });
+    return { dishes: dishes, variants: variants,
+             total: RECIPES.filter(function (r) { return r.type !== 'prep'; }).length };
+  }
+
+  /** 常见忌口的快选项。⚠️ 这是**配置层的快捷方式**,不是库的收录边界 ——
+   *  库里内脏苦瓜折耳根一样不少,勾不勾由用户定。 */
+  function commonDislikes() {
+    var picks = ['cilantro', 'houttuynia', 'bitter_melon', 'okra', 'zucchini',
+                 'lamb_leg', 'century_egg', 'durian', 'natto', 'blue_cheese'];
+    var out = [];
+    picks.forEach(function (id) {
+      var ing = ingredient(id);
+      if (ing) out.push({ id: id, name: ing.name });
+    });
+    // 内脏整类:从字典的类别推,不手写清单
+    var organs = INGREDIENTS.filter(function (i) { return i.category === '内脏'; });
+    if (organs.length) {
+      out.push({ id: '@category:内脏', name: '内脏(' + organs.length + '种)',
+                 expand: organs.map(function (i) { return i.id; }) });
+    }
+    return out;
+  }
+
+  /** 把 @category: 之类的组展开成真实 id 列表 */
+  function expandBlacklist(list) {
+    var out = [];
+    (list || []).forEach(function (b) {
+      if (b.indexOf('@category:') === 0) {
+        var c = b.slice(10);
+        INGREDIENTS.forEach(function (i) { if (i.category === c) out.push(i.id); });
+      } else out.push(b);
+    });
+    return out;
+  }
+
+  return {
+    equipment: equipment, methods: methods, flavors: flavors,
+    ingredient: ingredient,
+    equipmentOK: equipmentOK, availableVariants: availableVariants,
+    countAvailable: countAvailable,
+    commonDislikes: commonDislikes, expandBlacklist: expandBlacklist,
+  };
+})();
+
+if (typeof module !== 'undefined') module.exports = Catalog;
