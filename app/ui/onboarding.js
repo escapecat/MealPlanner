@@ -16,7 +16,10 @@ var Onboarding = (function () {
     blacklist: [],
     maxSpicy: 3,
     maxActiveMinutes: 45,
-    weeklyBudget: 200,
+    // ⚠️ 没有「每周预算」—— 135 条包装规格里填了参考价的是 0 条,
+    //    求解器算不出这次要花多少钱,问了也没法用。
+    //    DESIGN.md 自己写的:「接不上动作的就是虚荣指标,删掉」。价格数据填上再加回来。
+    // ⚠️ 也没有「做几顿」—— 那是每次生成时才知道的,不是长期设定。见 app.js 的顿数选择。
   };
 
   function h(tag, attrs, kids) {
@@ -206,8 +209,6 @@ var Onboarding = (function () {
       h('div', { class: 'hint' },
         ['算的是**活跃时间** —— 红烧肉总共 80 分钟,但其中 55 分钟在焖,人不用待在厨房']),
     ]));
-
-    c2.appendChild(numRow('weeklyBudget', '每周食材预算', '200', '元 · 只作参考,不会硬卡'));
     w.appendChild(c2);
 
     var a = h('div', { id: 'avail' });
@@ -248,7 +249,6 @@ var Onboarding = (function () {
       blacklist: state.blacklist.slice(),
       maxSpicy: state.maxSpicy,
       maxActiveMinutes: state.maxActiveMinutes,
-      weeklyBudget: state.weeklyBudget,
       updatedAt: now,
     });
     if (Onboarding.onDone) Onboarding.onDone();

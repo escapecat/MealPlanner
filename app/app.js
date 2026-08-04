@@ -90,6 +90,9 @@
 
   function renderPlan() {
     var cfg = Store.get('config', {}) || {};
+    var draft = Store.get('planDraft', { days: 2, perDay: 2 }) || { days: 2, perDay: 2 };
+    var meals = draft.days * draft.perDay;
+
     var c = Catalog.countAvailable({
       equipment: cfg.equipment,
       blacklist: Catalog.expandBlacklist(cfg.blacklist),
@@ -98,7 +101,43 @@
     });
     var w = h('div', { class: 'wrap' });
     w.appendChild(h('h1', {}, ['本周']));
-    w.appendChild(h('p', { class: 'sub' }, ['周末四顿 —— 两个午饭,两个晚饭']));
+    w.appendChild(h('p', { class: 'sub' }, ['每次做多少是这次的事,不是一次定死的设定']));
+
+    function pick(field, options, label, hint) {
+      return h('div', { class: 'row' }, [
+        h('label', { class: 'lab' }, [label]),
+        h('div', { class: 'seg' }, options.map(function (o) {
+          return h('button', {
+            type: 'button', 'aria-pressed': String(draft[field] === o.v),
+            onclick: function () {
+              draft[field] = o.v;
+              Store.set('planDraft', draft);
+              render();
+            },
+          }, [o.t]);
+        })),
+        hint ? h('div', { class: 'hint' }, [hint]) : h('span', {}),
+      ]);
+    }
+
+    var box = h('div', { class: 'card' });
+    box.appendChild(pick('days', [
+      { v: 1, t: '1 天' }, { v: 2, t: '2 天' }, { v: 3, t: '3 天' },
+    ], '这次做几天?'));
+    box.appendChild(pick('perDay', [
+      { v: 1, t: '只做一顿' }, { v: 2, t: '午饭 + 晚饭' },
+    ], '每天几顿?', '只做晚饭、中午吃外面也很常见'));
+    w.appendChild(box);
+
+    // 包装规格天然是「2 顿的量」,所以顿数直接决定要买几个包 —— 把这层换算摊开给你看,
+    // 而不是等生成完才发现「怎么买了三包菜」。
+    var protein = Math.ceil(meals / 2);
+    var veg = Math.ceil(meals / 2);
+    w.appendChild(h('div', { class: 'note' }, [
+      meals + ' 顿 ≈ ' + protein + ' 个蛋白包 + ' + veg + '-' + (veg + 1) + ' 个蔬菜包。' +
+      '盒马冷鲜肉 300-400g、绿叶菜 300g/袋,一人一顿 150-200g —— ' +
+      '一个包就是两顿的量,所以「主料复用、做法不重复」不是将就,是唯一解。',
+    ]));
 
     w.appendChild(h('div', { class: 'card' }, [
       h('div', { style: 'font-weight:600' }, ['菜谱库已就绪']),
