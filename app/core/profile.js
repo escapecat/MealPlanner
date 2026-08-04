@@ -52,17 +52,27 @@ var Profile = (function () {
       veg: 400,                                       // g/天,WHO 建议下限
       // 碳水不设目标只设上限:蛋白和蔬菜先满足,剩下的热量给主食
       carbCapKcal: Math.round(Math.max(kcal, floor) * 0.5),
+      mealsPerDay: p.mealsPerDay || 3,
     };
   }
 
-  /** 单顿目标。这个应用只管周末 4 顿(2 午 + 2 晚),早餐不在范围内。 */
+  /** 单顿目标。
+   *
+   * ⚠️ `mealsPerDay` 必须问,不能默认 3。
+   * 不吃早饭的人,两顿要扛下全天的量 —— 按三顿摊会让每顿少 1/3。
+   * 更糟的是后果会被误诊:用户说「不够吃」,系统以为是偏好问题去调构成,
+   * 而实际是这里一开始就除错了数。
+   *
+   * 这个应用只排周末的午饭+晚饭,早饭不管 —— 但早饭吃不吃,决定了午晚饭各该占多少。
+   */
   function perMeal(daily, mealsPerDay) {
     if (!daily) return null;
-    var n = mealsPerDay || 3;
+    var n = mealsPerDay || daily.mealsPerDay || 3;
     return {
       kcal: Math.round(daily.kcal / n),
       protein: Math.round(daily.protein / n),
       veg: Math.round(daily.veg / n),
+      basedOn: n,
     };
   }
 

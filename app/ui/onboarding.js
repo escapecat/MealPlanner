@@ -1,4 +1,4 @@
-// 冷启动表单 —— 身体数据 6 项 + 配置 5 项,一屏滚完,不做向导。
+// 冷启动表单 —— 身体数据 7 项 + 配置 4 项,一屏滚完,不做向导。
 //
 // DESIGN.md 第七节:「让一个有选择困难症的人在做饭前先做 40 个决定,是把问题放大了。」
 // 其余 40 多项全给默认值,收进以后的「高级设置」。
@@ -12,6 +12,7 @@ var Onboarding = (function () {
   var DEFAULTS = {
     sex: 'male', age: null, heightCm: null, weightKg: null,
     activity: 'sedentary', goal: 'maintain',
+    mealsPerDay: 3,
     equipment: ['炒锅', '汤锅'],
     blacklist: [],
     maxSpicy: 3,
@@ -81,13 +82,14 @@ var Onboarding = (function () {
       box.appendChild(h('div', { class: 'hint' }, ['填完年龄 / 身高 / 体重就会算出你的目标']));
       return;
     }
-    var pm = Profile.perMeal(d, 3);
+    var pm = Profile.perMeal(d, state.mealsPerDay);
     box.appendChild(h('div', {}, [
       h('div', {}, ['基础代谢 ' + Profile.bmr(state) + ' kcal · 日常消耗 ' + d.tdee + ' kcal']),
       h('div', { style: 'margin-top:6px;font-weight:600' },
         ['每日目标 ' + d.kcal + ' kcal · 蛋白 ' + d.protein + 'g · 蔬菜 ' + d.veg + 'g']),
       h('div', { class: 'hint' },
-        ['单顿约 ' + pm.kcal + ' kcal · 蛋白 ' + pm.protein + 'g · 蔬菜 ' + pm.veg + 'g']),
+        ['按一天 ' + pm.basedOn + ' 顿摊:单顿约 ' + pm.kcal + ' kcal · 蛋白 '
+          + pm.protein + 'g · 蔬菜 ' + pm.veg + 'g']),
     ]));
     if (d.kcalFloored) {
       box.appendChild(h('div', { class: 'note warn', style: 'margin-top:10px' },
@@ -126,7 +128,7 @@ var Onboarding = (function () {
     w.appendChild(h('p', { class: 'sub' },
       ['11 个问题,大概一分钟。之后都能改 —— 这些只是起点,不是承诺。']));
 
-    // —— 身体数据 6 项
+    // —— 身体数据 7 项
     w.appendChild(h('h2', {}, ['身体数据']));
     var c1 = h('card' in {} ? 'div' : 'div', { class: 'card' });
     c1.appendChild(h('div', { class: 'row' }, [
@@ -150,6 +152,17 @@ var Onboarding = (function () {
       })),
       h('div', { class: 'hint' }, [(Profile.GOAL[state.goal] || {}).desc || '']),
     ]));
+    c1.appendChild(h('div', { class: 'row' }, [
+      h('label', { class: 'lab' }, ['一天吃几顿?']),
+      seg('mealsPerDay', [
+        { value: 2, label: '2 顿' }, { value: 3, label: '3 顿' },
+      ]),
+      h('div', { class: 'hint' }, [
+        state.mealsPerDay === 2
+          ? '不吃早饭 —— 那午饭晚饭要扛下全天的量,每顿会明显比按三顿摊的大'
+          : '早饭在外面买也算 —— 这个应用只排周末的午饭和晚饭,但早饭吃不吃决定了这两顿各占多少',
+      ]),
+    ]));
     w.appendChild(c1);
 
     var t = h('div', { class: 'card', id: 'targets' });
@@ -160,7 +173,7 @@ var Onboarding = (function () {
       '「没吃饱」调的是构成:先加蛋白,再加蔬菜体积,再换低能量密度做法。',
     ]));
 
-    // —— 配置 5 项
+    // —— 配置 4 项
     w.appendChild(h('h2', {}, ['厨房与口味']));
     var c2 = h('div', { class: 'card' });
 
@@ -176,7 +189,10 @@ var Onboarding = (function () {
           if (i >= 0) state.equipment.splice(i, 1); else state.equipment.push(it.id);
         }
       ),
-      h('div', { class: 'hint' }, ['烤箱和空气炸锅在多数菜里可以互相替代,有一个就行']),
+      h('div', { class: 'hint' }, [
+        '不用勾满 —— 炒锅/汤锅/不粘锅在多数做法下能互顶(只有爆炒非炒锅不可),' +
+        '烤箱和空气炸锅也能换。数字已经把替代算进去了。',
+      ]),
     ]));
 
     c2.appendChild(h('div', { class: 'row' }, [
@@ -240,6 +256,7 @@ var Onboarding = (function () {
     Store.set('profile', {
       sex: state.sex, age: state.age, heightCm: state.heightCm,
       activity: state.activity, goal: state.goal,
+      mealsPerDay: state.mealsPerDay,
       createdAt: now, updatedAt: now,
     });
     // 体重存成时间序列 —— 体重变则 TDEE 变则目标重算(DESIGN 第七节)
