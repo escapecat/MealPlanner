@@ -76,11 +76,7 @@
     } else if (current === 'me') {
       SettingsUI.mount(page);
     } else if (current === 'pantry') {
-      page.appendChild(placeholder('库存还是空的', [
-        '库存不用手动录 —— 采购清单上勾「已买」就会自动按包装规格入库,',
-        '某顿点「完成」就自动按用量扣减。',
-        '所以先去「本周」新建一次做饭记录。',
-      ], { label: '去记一次', onclick: function () { current = 'plan'; render(); } }));
+      PantryUI.mount(page);
     } else {
       RoundsUI.mount(page, { onOpenPkg: function () { current = 'pkg'; render(); } });
     }
