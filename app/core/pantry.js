@@ -26,9 +26,11 @@ var Pantry = (function () {
   function staples() {
     var raw = Store.get('staples', null);
     if (raw === null) return null;
-    // 兼容早期版本的纯字符串数组
+    // 兼容早期版本:纯字符串数组 → 对象;没有 addedAt 的补 null
     return raw.map(function (x) {
-      return typeof x === 'string' ? { id: x, openedAt: null } : x;
+      if (typeof x === 'string') return { id: x, addedAt: null, openedAt: null };
+      if (x.addedAt === undefined) x.addedAt = null;
+      return x;
     });
   }
 
@@ -57,13 +59,42 @@ var Pantry = (function () {
 
   function hasStaple(id) { return !!stapleEntry(id); }
 
-  function toggleStaple(id) {
+  function toggleStaple(id, boughtAt) {
     var list = (staples() || []).slice();
     var i = list.findIndex(function (x) { return x.id === id; });
     if (i >= 0) list.splice(i, 1);
-    else list.push({ id: id, openedAt: null });
+    // 勾上的那一刻默认就是「今天买/确认的」—— 不填也有个时间点,
+    // 总比「不知道放了多久」强;记错了可以改。
+    else list.push({ id: id, addedAt: boughtAt || new Date().toISOString(), openedAt: null });
     Store.set('staples', list);
     return list;
+  }
+
+  function setBought(id, iso) {
+    var list = (staples() || []).slice();
+    var e = list.filter(function (x) { return x.id === id; })[0];
+    if (!e) return null;
+    e.addedAt = iso;
+    Store.set('staples', list);
+    return e;
+  }
+
+  /** 未开封的还能放多久 —— 买入时间 + 开封前保质期 */
+  function unopenedDaysLeft(entry, now) {
+    if (!entry || !entry.addedAt || entry.openedAt) return null;
+    var ing = INGREDIENTS.filter(function (i) { return i.id === entry.id; })[0];
+    if (!ing || !ing.shelfLifeDays) return null;
+    var dead = Date.parse(entry.addedAt) + ing.shelfLifeDays * 864e5;
+    return Math.round((dead - Date.parse(now)) / 864e5);
+  }
+
+  /** 开封后还能放多久 */
+  function openedDaysLeft(entry, now) {
+    if (!entry || !entry.openedAt) return null;
+    var ing = INGREDIENTS.filter(function (i) { return i.id === entry.id; })[0];
+    if (!ing || !ing.openedShelfLifeDays) return null;
+    var dead = Date.parse(entry.openedAt) + ing.openedShelfLifeDays * 864e5;
+    return Math.round((dead - Date.parse(now)) / 864e5);
   }
 
   function setOpened(id, iso) {
@@ -274,6 +305,7 @@ var Pantry = (function () {
 
   return {
     STARTER: STARTER, staples: staples, stapleEntry: stapleEntry,
+    setBought: setBought, unopenedDaysLeft: unopenedDaysLeft, openedDaysLeft: openedDaysLeft,
     worthTrackingOpened: worthTrackingOpened, setOpened: setOpened,
     stapleAlerts: stapleAlerts, surplusWarning: surplusWarning,
     ensureInit: ensureInit, hasStaple: hasStaple, toggleStaple: toggleStaple,

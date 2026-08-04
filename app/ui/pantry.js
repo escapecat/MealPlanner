@@ -11,7 +11,8 @@
 
 var PantryUI = (function () {
 
-  var el, tab = 'fridge', q = '', openCat = null, adding = false, addDraft = null, ingQ = '';
+  var el, tab = 'fridge', q = '', openCat = null, adding = false, addDraft = null,
+      ingQ = '', browseAll = false;
 
   function h(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -256,133 +257,209 @@ var PantryUI = (function () {
 
   // ---------------- 调料柜 ----------------
 
-  function stapleRow(ing) {
-    var has = Pantry.hasStaple(ing.id);
-    var entry = Pantry.stapleEntry(ing.id);
-    var track = Pantry.worthTrackingOpened(ing);
-    var box = h('div', { style: 'padding:8px 0;border-bottom:1px solid var(--border)' });
-
-    var head = h('div', { style: 'display:flex;align-items:center;gap:10px' });
-    head.appendChild(h('button', {
-      type: 'button',
-      style: 'border:0;background:none;font-size:19px;cursor:pointer;padding:0;flex:0 0 auto',
-      onclick: function () { Pantry.toggleStaple(ing.id); render(); },
-    }, [has ? '☑' : '☐']));
-    head.appendChild(h('div', { style: 'flex:1;min-width:0' + (has ? '' : ';color:var(--text-dim)') }, [
-      h('div', {}, [ing.name]),
-      h('div', { class: 'hint' }, [
-        (ing.packaging || '规格未填') +
-        (ing.inevitableSurplus ? ' · ⚠️ 单人多半吃不完' : ''),
-      ]),
-    ]));
-    box.appendChild(head);
-
-    if (has && track) {
-      var opened = entry && entry.openedAt;
-      var line = h('div', { style: 'margin-top:6px;margin-left:29px;display:flex;gap:6px;align-items:center;flex-wrap:wrap' });
-      if (opened) {
-        var dead = Date.parse(opened) + ing.openedShelfLifeDays * 864e5;
-        var left = Math.round((dead - Date.parse(now())) / 864e5);
-        line.appendChild(h('span', { class: 'conf conf-' + (left < 0 ? 'U' : left < 14 ? 'C' : 'B') },
-          [left < 0 ? '开封已过期' : '开封后还剩 ' + left + ' 天']));
-        line.appendChild(h('button', {
-          class: 'btn ghost', style: 'width:auto;padding:3px 9px;font-size:12px',
-          onclick: function () { Pantry.setOpened(ing.id, null); render(); },
-        }, ['清除']));
-      } else {
-        line.appendChild(h('span', { class: 'hint' },
-          ['开封后只能放 ' + ing.openedShelfLifeDays + ' 天']));
-        line.appendChild(h('button', {
-          class: 'btn ghost', style: 'width:auto;padding:3px 9px;font-size:12px',
-          onclick: function () { Pantry.setOpened(ing.id, now()); render(); },
-        }, ['今天开的']));
-      }
-      box.appendChild(line);
-    }
-    return box;
+  function fmtDate(iso) {
+    return iso ? iso.slice(5, 7) + '/' + iso.slice(8, 10) : null;
   }
 
-  function renderStaples(w) {
-    Pantry.ensureInit();
-
-    var al = Pantry.stapleAlerts(now());
-    if (al.length) {
-      var ab = h('div', { class: 'card' });
-      ab.appendChild(h('div', { style: 'font-weight:600;margin-bottom:6px' }, ['该处理的']));
-      al.forEach(function (a) {
-        ab.appendChild(h('div', { class: a.expired ? 'note warn' : 'note', style: 'margin-bottom:6px' }, [
-          a.name + ' —— ' + (a.expired ? '开封超期 ' + (-a.daysLeft) + ' 天' : '还有 ' + a.daysLeft + ' 天') +
-          (a.usedInDishes ? ',库里 ' + a.usedInDishes + ' 道菜用它' : ''),
-        ]));
-      });
-      w.appendChild(ab);
+  /** 一行小字讲清楚:什么时候买的、开没开封、还能放多久 */
+  function ageText(entry) {
+    var n = now();
+    if (entry.openedAt) {
+      var d = Pantry.openedDaysLeft(entry, n);
+      if (d == null) return { text: fmtDate(entry.openedAt) + ' 开封', level: 'ok' };
+      return {
+        text: fmtDate(entry.openedAt) + ' 开封 · ' +
+              (d < 0 ? '超期 ' + (-d) + ' 天' : '还能放 ' + d + ' 天'),
+        level: d < 0 ? 'bad' : (d < 14 ? 'warn' : 'ok'),
+      };
     }
+    if (entry.addedAt) {
+      var u = Pantry.unopenedDaysLeft(entry, n);
+      var since = Math.round((Date.parse(n) - Date.parse(entry.addedAt)) / 864e5);
+      return {
+        text: fmtDate(entry.addedAt) + ' 买 · ' +
+              (since <= 0 ? '今天' : since + ' 天前') + ' · 未开封' +
+              (u != null && u < 90 ? ' · 保质期剩 ' + u + ' 天' : ''),
+        level: (u != null && u < 0) ? 'bad' : (u != null && u < 30 ? 'warn' : 'ok'),
+      };
+    }
+    return { text: '没记买入时间 —— 点 ··· 补上', level: 'dim' };
+  }
 
-    w.appendChild(h('div', { class: 'row' }, [
+  /** 密集单行。「我有什么、什么时候买的」要一眼扫完,一样一张卡片是扫不动的。 */
+  function ownedRow(ing) {
+    var entry = Pantry.stapleEntry(ing.id);
+    if (!entry) return h('span', {});
+    var track = Pantry.worthTrackingOpened(ing);
+    var a = ageText(entry);
+    var color = { bad: 'var(--danger)', warn: 'var(--warn)', dim: 'var(--text-dim)' }[a.level]
+                || 'var(--text-dim)';
+
+    var row = h('div', {
+      style: 'display:flex;gap:8px;align-items:center;padding:7px 0;' +
+             'border-bottom:1px solid var(--border)',
+    });
+    row.appendChild(h('div', { style: 'flex:1;min-width:0' }, [
+      h('div', {}, [ing.name]),
+      h('div', { style: 'font-size:12px;color:' + color }, [a.text]),
+    ]));
+    if (track && !entry.openedAt) {
+      row.appendChild(h('button', {
+        class: 'btn ghost', style: 'width:auto;padding:4px 9px;font-size:12px;flex:0 0 auto',
+        onclick: function () { Pantry.setOpened(ing.id, now()); render(); },
+      }, ['开封了']));
+    }
+    row.appendChild(h('button', {
+      class: 'btn ghost', style: 'width:auto;padding:4px 8px;font-size:12px;flex:0 0 auto',
+      onclick: function () { editStaple(ing, entry); },
+    }, ['···']));
+    return row;
+  }
+
+  function editStaple(ing, entry) {
+    var lines = [
+      ing.name,
+      '1 = 改买入日期',
+      entry.openedAt ? '2 = 改开封日期' : '2 = 标记为已开封',
+      '3 = 用完了 / 从柜子里删掉',
+      '',
+      '输入数字:',
+    ];
+    var pick = prompt(lines.join('\n'));
+    if (!pick) return;
+    pick = pick.trim();
+    if (pick === '1') {
+      var d = prompt('买入日期(YYYY-MM-DD),留空表示不记得',
+                     entry.addedAt ? entry.addedAt.slice(0, 10) : '');
+      if (d === null) return;
+      Pantry.setBought(ing.id, d ? new Date(d).toISOString() : null);
+    } else if (pick === '2') {
+      var d2 = prompt('开封日期(YYYY-MM-DD),留空表示还没开封',
+                      entry.openedAt ? entry.openedAt.slice(0, 10)
+                                     : new Date().toISOString().slice(0, 10));
+      if (d2 === null) return;
+      Pantry.setOpened(ing.id, d2 ? new Date(d2).toISOString() : null);
+    } else if (pick === '3') {
+      Pantry.toggleStaple(ing.id);
+    } else return;
+    render();
+  }
+
+  /** 全库浏览/搜索时用的勾选行 */
+  function pickRow(ing) {
+    var has = Pantry.hasStaple(ing.id);
+    var row = h('div', {
+      style: 'display:flex;gap:10px;align-items:center;padding:7px 0;' +
+             'border-bottom:1px solid var(--border)',
+    });
+    row.appendChild(h('button', {
+      type: 'button',
+      style: 'border:0;background:none;font-size:18px;cursor:pointer;padding:0;flex:0 0 auto',
+      onclick: function () { Pantry.toggleStaple(ing.id); render(); },
+    }, [has ? '☑' : '☐']));
+    row.appendChild(h('div', { style: 'flex:1' + (has ? '' : ';color:var(--text-dim)') }, [
+      h('div', {}, [ing.name]),
+      h('div', { class: 'hint' }, [
+        (ing.packaging || '规格未填') + (ing.inevitableSurplus ? ' · 单人多半吃不完' : ''),
+      ]),
+    ]));
+    return row;
+  }
+
+  function searchBox() {
+    return h('div', { class: 'row' }, [
       h('input', {
         type: 'text', placeholder: '搜调料…… 例:豆瓣 / 咖喱 / 鱼露', value: q,
         oninput: function (e) { q = e.target.value.trim(); render(); },
       }),
-    ]));
+    ]);
+  }
 
-    if (!q) {
-      var sug = Pantry.suggestUnlocks(5);
-      if (sug.length) {
-        var sb = h('div', { class: 'card' });
-        sb.appendChild(h('div', { style: 'font-weight:600;margin-bottom:6px' }, ['添这几样能多做最多菜']));
-        sug.forEach(function (s2) {
-          var r = h('div', { style: 'display:flex;gap:8px;align-items:center;margin-bottom:6px' });
-          r.appendChild(h('button', {
-            class: 'btn ghost', style: 'width:auto;padding:5px 10px;font-size:13px;flex:0 0 auto',
-            onclick: function () { Pantry.toggleStaple(s2.id); render(); },
-          }, ['+ ' + s2.name]));
-          r.appendChild(h('span', { class: 'hint', style: 'flex:1' }, [
-            '解锁 ' + s2.dishes + ' 道' + (s2.inevitableSurplus ? ' · ⚠️ 最小规格吃不完' : ''),
-          ]));
-          sb.appendChild(r);
-        });
-        w.appendChild(sb);
-      }
-    }
-
+  function renderStaples(w) {
+    Pantry.ensureInit();
     var pool = INGREDIENTS.filter(function (i) { return i.tier === 'staple'; });
+    var mine = Pantry.staples() || [];
 
     if (q) {
+      w.appendChild(searchBox());
       var hits = pool.filter(function (i) {
         var hay = i.name + ' ' + i.id + ' ' + (i.aliases || []).join(' ');
         return hay.toLowerCase().indexOf(q.toLowerCase()) >= 0;
       });
-      var c = h('div', { class: 'card' });
+      var c = h('div', { class: 'card', style: 'padding:2px 14px' });
       if (!hits.length) c.appendChild(h('div', { class: 'hint' }, ['没找到「' + q + '」']));
-      hits.slice(0, 40).forEach(function (i) { c.appendChild(stapleRow(i)); });
+      hits.slice(0, 40).forEach(function (i) { c.appendChild(pickRow(i)); });
       w.appendChild(c);
       return;
     }
 
-    // 按类别折叠 —— 382 条平铺没法看
-    var byCat = {};
-    pool.forEach(function (i) { (byCat[i.category] = byCat[i.category] || []).push(i); });
-    var cats = Object.keys(byCat).sort(function (a, b) { return byCat[b].length - byCat[a].length; });
+    if (browseAll) {
+      w.appendChild(h('button', {
+        class: 'btn ghost', style: 'margin-bottom:10px;font-size:13px;padding:8px',
+        onclick: function () { browseAll = false; openCat = null; render(); },
+      }, ['← 只看我有的']));
+      w.appendChild(searchBox());
+      var byCat = {};
+      pool.forEach(function (i) { (byCat[i.category] = byCat[i.category] || []).push(i); });
+      Object.keys(byCat).sort(function (x, y) { return byCat[y].length - byCat[x].length; })
+        .forEach(function (cat) {
+          var list = byCat[cat];
+          var n = list.filter(function (i) { return Pantry.hasStaple(i.id); }).length;
+          w.appendChild(h('button', {
+            class: 'btn ghost', style: 'margin-bottom:6px;text-align:left',
+            onclick: function () { openCat = (openCat === cat ? null : cat); render(); },
+          }, [(openCat === cat ? '▾ ' : '▸ ') + cat + '   ' + n + '/' + list.length]));
+          if (openCat === cat) {
+            var cc = h('div', { class: 'card', style: 'padding:2px 14px' });
+            list.forEach(function (i) { cc.appendChild(pickRow(i)); });
+            w.appendChild(cc);
+          }
+        });
+      return;
+    }
 
-    var ownedCount = (Pantry.staples() || []).length;
+    var alerts = Pantry.stapleAlerts(now());
+    if (alerts.length) {
+      w.appendChild(h('div', { class: 'note warn' }, [
+        alerts.length + ' 样开封后快过期:' +
+        alerts.slice(0, 3).map(function (a2) {
+          return a2.name + (a2.expired ? '(已超期)' : '(' + a2.daysLeft + ' 天)');
+        }).join(' · '),
+      ]));
+    }
+
     w.appendChild(h('div', { class: 'note' }, [
-      '有 ' + ownedCount + ' 样 / 共 ' + pool.length + ' 种。**调料不进每周采购清单** —— ' +
-      '只在没有、或开封快过期时提醒。',
+      '有 ' + mine.length + ' 样。调料不进每周采购清单 —— 只在没有、或开封快过期时提醒。',
     ]));
 
-    cats.forEach(function (cat) {
-      var list = byCat[cat];
-      var mine = list.filter(function (i) { return Pantry.hasStaple(i.id); }).length;
-      w.appendChild(h('button', {
-        class: 'btn ghost', style: 'margin-bottom:6px;text-align:left',
-        onclick: function () { openCat = (openCat === cat ? null : cat); render(); },
-      }, [(openCat === cat ? '▾ ' : '▸ ') + cat + '   ' + mine + '/' + list.length]));
-      if (openCat === cat) {
-        var c2 = h('div', { class: 'card' });
-        list.forEach(function (i) { c2.appendChild(stapleRow(i)); });
-        w.appendChild(c2);
-      }
+    if (!mine.length) {
+      w.appendChild(h('div', { class: 'empty' }, [
+        h('div', { class: 'big' }, ['🧂']),
+        h('div', {}, ['一样都没有']),
+      ]));
+    }
+
+    var byCat2 = {};
+    mine.forEach(function (e) {
+      var i = INGREDIENTS.filter(function (x) { return x.id === e.id; })[0];
+      if (!i) return;
+      (byCat2[i.category] = byCat2[i.category] || []).push(i);
     });
+    Object.keys(byCat2).sort().forEach(function (cat) {
+      w.appendChild(h('h2', {}, [cat + ' · ' + byCat2[cat].length]));
+      var c2 = h('div', { class: 'card', style: 'padding:2px 14px' });
+      byCat2[cat].sort(function (x, y) { return x.name.localeCompare(y.name, 'zh'); })
+        .forEach(function (i) { c2.appendChild(ownedRow(i)); });
+      w.appendChild(c2);
+    });
+
+    w.appendChild(h('button', {
+      class: 'btn ghost', style: 'margin-top:12px;font-size:13px;padding:8px',
+      onclick: function () { browseAll = true; render(); },
+    }, ['＋ 添调料(全部 ' + pool.length + ' 种)']));
+    w.appendChild(h('div', { class: 'hint', style: 'text-align:center;margin-top:6px' }, [
+      '生成计划时缺哪样会直接问你 —— 不用先在这儿备齐',
+    ]));
   }
 
   // ---------------- 页面 ----------------
