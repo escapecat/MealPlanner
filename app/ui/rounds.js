@@ -178,12 +178,13 @@ var RoundsUI = (function () {
     Pantry.items().forEach(function (it) {
       stock[it.ingredientId] = (stock[it.ingredientId] || 0) + it.amount;
     });
-    var mustUse = Pantry.expiringSoon(3, new Date().toISOString())
-      .map(function (it) { return it.ingredientId; });
+    var nowIso = new Date().toISOString();
+    var mustUse = Pantry.expiringSoon(3, nowIso).map(function (it) { return it.ingredientId; });
 
     var out = Solver.solve({
       servings: r.input.servings || r.input.meals,
       constraints: cons, stock: stock, mustUse: mustUse,
+      stockDetail: Pantry.stockSummary(nowIso),   // 带紧迫度,放久的会被优先排掉
       recentRecipeIds: recentIds(),
     });
     if (!out.ok) {
@@ -198,6 +199,7 @@ var RoundsUI = (function () {
       shopping: out.stage1.picks.map(function (p) {
         return {
           ingredientId: p.ingredientId, name: p.ing.name, kind: p.kind,
+          fromStock: !!p.fromStock, urgency: p.urgency, daysLeft: p.daysLeft,
           packs: p.plan ? p.plan.packs : null,
           packSize: p.plan ? p.plan.option.netWeight : null,
           unit: p.plan ? p.plan.option.unit : 'g',
@@ -241,8 +243,22 @@ var RoundsUI = (function () {
       (s.carryLeft > 1 ? ' · 结转 ' + Math.round(s.carryLeft) + 'g 下次接着用' : ''),
     ]));
 
+    var useStock = s.shopping.filter(function (x) { return x.fromStock; });
+    if (useStock.length) {
+      box.appendChild(h('div', { style: 'font-weight:600;margin:12px 0 6px' }, ['先把这些吃掉']));
+      useStock.forEach(function (it) {
+        box.appendChild(h('div', { class: 'note warn', style: 'margin-bottom:6px' }, [
+          it.name + ' —— 库存里还有 ' + Math.round(it.total) + 'g,' +
+          (it.daysLeft != null
+            ? (it.daysLeft <= 0 ? '已经过期了' : '还有 ' + it.daysLeft + ' 天到期')
+            : '放了有一阵了') +
+          '。这一轮的菜已经按它来排。',
+        ]));
+      });
+    }
+
     box.appendChild(h('div', { style: 'font-weight:600;margin:12px 0 6px' }, ['买这些']));
-    s.shopping.forEach(function (it, i) {
+    s.shopping.filter(function (x) { return !x.fromStock; }).forEach(function (it, i) {
       var line = h('div', { style: 'display:flex;gap:8px;align-items:center;margin-bottom:6px' });
       line.appendChild(h('button', {
         type: 'button',
@@ -250,7 +266,9 @@ var RoundsUI = (function () {
         onclick: function () {
           var rs = rounds();
           var k = rs.findIndex(function (x) { return x.id === r.id; });
-          var t = rs[k].solved.shopping[i];
+          var t = rs[k].solved.shopping.filter(function (x) {
+            return x.ingredientId === it.ingredientId;
+          })[0];
           t.bought = !t.bought;
           // 勾「已买」自动入库 —— 零额外录入
           if (t.bought) {

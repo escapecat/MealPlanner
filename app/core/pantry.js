@@ -175,6 +175,48 @@ var Pantry = (function () {
     }).sort(function (a, b) { return Date.parse(a.expiresAt) - Date.parse(b.expiresAt); });
   }
 
+  /**
+   * 紧迫度 0~1 —— **连续的,不是「3 天内 / 3 天外」的二元开关**。
+   *
+   * ⚠️ 二元阈值会漏掉最常见的情况:一盒鸡蛋买了 25 天(保质期 30 天),
+   *    没进 3 天红线,于是求解器完全不管它,下一轮又买一盒。
+   *    等它进红线时已经只剩 3 天,来不及了。
+   *    放到 8 成保质期就该开始往前排 —— 紧迫度是渐变的,排菜权重也该是渐变的。
+   *
+   * 返回 0 = 刚买的,1 = 已过期。
+   */
+  function urgency(it, now) {
+    if (!it.expiresAt || !it.addedAt) return 0;
+    var total = Date.parse(it.expiresAt) - Date.parse(it.addedAt);
+    var used = Date.parse(now) - Date.parse(it.addedAt);
+    if (total <= 0) return 1;
+    return Math.max(0, Math.min(1, used / total));
+  }
+
+  /** 给求解器的库存快照:按食材聚合,带紧迫度和剩余天数 */
+  function stockSummary(now) {
+    var agg = {};
+    items().forEach(function (it) {
+      var u = urgency(it, now);
+      var a = (agg[it.ingredientId] = agg[it.ingredientId] || {
+        ingredientId: it.ingredientId, grams: 0, urgency: 0, daysLeft: null,
+      });
+      a.grams += it.amount;
+      a.urgency = Math.max(a.urgency, u);        // 同一食材取最紧迫的那批
+      if (it.expiresAt) {
+        var d = Math.round((Date.parse(it.expiresAt) - Date.parse(now)) / 864e5);
+        a.daysLeft = a.daysLeft == null ? d : Math.min(a.daysLeft, d);
+      }
+    });
+    return Object.keys(agg).map(function (k) {
+      var a = agg[k];
+      var ing = INGREDIENTS.filter(function (i) { return i.id === k; })[0];
+      a.name = ing ? ing.name : k;
+      a.tier = ing ? ing.tier : null;
+      return a;
+    }).sort(function (x, y) { return y.urgency - x.urgency; });
+  }
+
   // ---- 给求解器用 ----
 
   /** 这个 variant 要用到、而储物柜里没有的调料。**不是过滤条件,是扣分项。** */
@@ -237,6 +279,7 @@ var Pantry = (function () {
     ensureInit: ensureInit, hasStaple: hasStaple, toggleStaple: toggleStaple,
     items: items, addFromPackage: addFromPackage, consume: consume,
     totalOf: totalOf, expiringSoon: expiringSoon,
+    urgency: urgency, stockSummary: stockSummary,
     missingSeasonings: missingSeasonings, unlockValue: unlockValue,
     suggestUnlocks: suggestUnlocks,
   };

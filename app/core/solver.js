@@ -89,22 +89,57 @@ var Solver = (function () {
 
     var picks = [];
 
-    // 临期的必须先排进去 —— 这是硬约束,不是打分项
+    // 库存里放久了的,直接进这一轮的「要吃掉」清单 —— 不用买,但要排菜消耗。
+    //
+    // ⚠️ 紧迫度是**连续的**:超过 55% 保质期就开始进,越接近过期权重越高。
+    //    早先只收「3 天内过期」的,结果放了 25 天的鸡蛋(保质期 30 天)没人管,
+    //    下一轮又买一盒,等它进红线时已经来不及。
+    var urgentStock = (opts.stockDetail || []).filter(function (a) {
+      return a.urgency >= 0.55 && a.grams > 10;
+    });
+    urgentStock.forEach(function (a) {
+      var i = ing(a.ingredientId);
+      if (!i) return;
+      picks.push({ ingredientId: a.ingredientId, ing: i, reason: 'usestock',
+                   needGrams: a.grams, fromStock: true,
+                   urgency: a.urgency, daysLeft: a.daysLeft });
+    });
+    // 显式点名的(手动勾「这次要清掉」)优先级最高
     mustUse.forEach(function (id) {
+      if (picks.some(function (p) { return p.ingredientId === id; })) return;
       var i = ing(id);
       if (!i) return;
       picks.push({ ingredientId: id, ing: i, reason: 'expiring',
-                   needGrams: stock[id] || 0, fromStock: true });
+                   needGrams: stock[id] || 0, fromStock: true, urgency: 1 });
     });
 
     function take(list, count, fallbackPerServing, kind, minDishes) {
       var n = 0;
       var servingsPerPick = Math.max(1, servings / Math.max(1, count));
-      for (var k = 0; k < list.length && n < count; k++) {
-        var c = list[k];
+
+      // ⚠️ 不能严格取覆盖度前 N 名 —— 那是确定性的,每次都选同样几样。
+      //    模拟 400 个场景:只有 16 种食材被选过,鸡蛋 99%、洋葱 98%,
+      //    韩式蛋卷出现在 91% 的方案里,512 道菜只排到过 95 道。
+      //    改成在覆盖度靠前的一批里**按权重抽签**,保留「百搭优先」但不再一成不变。
+      var seedV = (opts.seed != null ? opts.seed : servings * 7919) + (kind === 'veg' ? 104729 : 0);
+      var rndV = function () {
+        seedV = (seedV * 1103515245 + 12345) % 2147483648;
+        return seedV / 2147483648;
+      };
+      var eligible = list.filter(function (c) { return c.dishes >= (minDishes || 1); });
+      var poolSize = Math.min(eligible.length, Math.max(count * 4, 12));
+      var top = eligible.slice(0, poolSize);
+
+      while (n < count && top.length) {
+        var tot = 0;
+        top.forEach(function (c) { tot += c.dishes; });
+        var pickAt = rndV() * tot, acc2 = 0, sel = top.length - 1;
+        for (var q = 0; q < top.length; q++) {
+          acc2 += top[q].dishes;
+          if (acc2 >= pickAt) { sel = q; break; }
+        }
+        var c = top.splice(sel, 1)[0];
         if (picks.some(function (p) { return p.ingredientId === c.id; })) continue;
-        // 只进 3 道菜的食材,买回去大概率用不掉 —— 这是浪费的主要来源
-        if (c.dishes < (minDishes || 1)) continue;
         var per = c.avgGrams || fallbackPerServing;
         // 每样覆盖「总份数 ÷ 这一类要买几样」,不是一律买两份的量 ——
         // 4 份饭买 2 个蛋白 + 3 个蔬菜,每样都按 2 份买 = 备了 10 份的料
@@ -157,9 +192,12 @@ var Solver = (function () {
     opts = opts || {};
     var have = {};
     var budget = {};
+    var weightOf = {};      // 消耗这一样的价值倍数 —— 临期的算得更重
     stage1Result.picks.forEach(function (p) {
       have[p.ingredientId] = 1;
       budget[p.ingredientId] = p.plan ? p.plan.total : (p.needGrams || 0);
+      // 快过期的库存吃掉一克,比新买的吃掉一克有价值 —— 一个是救回来,一个只是不剩
+      weightOf[p.ingredientId] = p.fromStock ? (1 + (p.urgency || 0) * 3) : 1;
     });
 
     // 候选:**主料必须全部来自买的东西或库存**。
@@ -184,6 +222,8 @@ var Solver = (function () {
         var g = variantUses(v, have);
         if (g <= 0) return;
         cands.push({ recipe: e.recipe, variant: v, uses: g,
+                     nutrition: (typeof Nutrition !== 'undefined')
+                                ? Nutrition.ofMeal(v) : null,
                      missing: (typeof Pantry !== 'undefined')
                               ? Pantry.missingSeasonings(v).length : 0 });
       });
@@ -192,6 +232,7 @@ var Solver = (function () {
 
 
     var recent = opts.recentRecipeIds || {};
+    var pkgCache = {};          // 包装规格查询缓存 —— 每步每候选都要查,不缓存会很慢
     var best = null;
     var TRIES = Math.min(600, 150 + servings * 40);   // 份数多则搜索空间大,采样跟着涨
 
@@ -210,6 +251,9 @@ var Solver = (function () {
       //    8 份那档生鲜浪费一直卡在 48%。改成每步按剩余量加权之后,
       //    消耗多的菜自然更容易中签,但仍带随机性以保证多样。
       var avail = cands.filter(function (c) { return !recent[c.recipe.id]; });
+      // 已经要买的东西 —— 复用它们的菜优先,免得为 20g 配菜再开一整包
+      var needSet = {};
+      Object.keys(budget).forEach(function (id) { needSet[id] = 1; });
 
       while (chosen.length < servings && avail.length) {
         var weights = [], total = 0;
@@ -219,11 +263,43 @@ var Solver = (function () {
             var x = cc.variant.ingredients[q];
             for (var z = 0; z < x.ids.length; z++) {
               var id = x.ids[z];
-              if (left[id] > 0 && x.grams) helps += Math.min(left[id], x.grams);
+              if (left[id] > 0 && x.grams) {
+                helps += Math.min(left[id], x.grams) * (weightOf[id] || 1);
+              }
             }
           }
+          // 新开一包会剩多少 —— 按**真实边际浪费**罚,不是按「开了几包」罚。
+          //
+          // ⚠️ 12 周多轮模拟的诊断:扔掉的东西 90% 是配菜,不是主料。
+          //    芹菜扔 90%、绿豆芽 86%、竹笋 80%、黄瓜 73% —— 全是「一道菜用 30g,
+          //    最小包装 300g,没有第二道菜用它」。而猪五花只扔 16%、牛腩 23%。
+          //    早先按「多开几包」计数罚,分不出「开一包用 250g」和「开一包用 30g」,
+          //    而这两者的浪费差十倍。
+          var newWaste = 0;
+          for (var q3 = 0; q3 < cc.variant.ingredients.length; q3++) {
+            var x3 = cc.variant.ingredients[q3];
+            if (x3.role !== 'main' && x3.role !== 'side') continue;
+            var id3 = x3.ids[0];
+            if (needSet[id3]) continue;              // 已经要买了,不算新开
+            var i3 = ing(id3);
+            if (!i3 || i3.tier === 'staple') continue;
+            var g3 = (typeof Nutrition !== 'undefined') ? Nutrition.gramsOf(x3) : x3.grams;
+            if (g3 == null) continue;
+            var opt3 = pkgCache[id3];
+            if (opt3 === undefined) {
+              opt3 = Packaging.smallest(id3);
+              pkgCache[id3] = opt3 || null;
+            }
+            if (!opt3) continue;
+            var packs3 = Math.max(1, Math.ceil(g3 / opt3.netWeight));
+            var leftover3 = packs3 * opt3.netWeight - g3;
+            // fresh 的剩下会烂,buffer 的能结转 —— 罚得轻
+            newWaste += leftover3 * (i3.tier === 'fresh' ? 1 : 0.25);
+          }
           // 做法重复的降权但不禁止 ——「做法不重复」是软目标不是硬约束
-          var w = (helps + 1) * (methods[cc.recipe.method] ? 0.25 : 1);
+          var w = (helps + 1)
+                * (methods[cc.recipe.method] ? 0.25 : 1)
+                / (1 + newWaste / 120);            // 会剩 120g 就减半,240g 减到三分之一
           weights.push(w); total += w;
         }
         var pick = rnd() * total, acc = 0, idx = weights.length - 1;
@@ -242,6 +318,7 @@ var Solver = (function () {
             var id2 = xx.ids[z2];
             if (left[id2] != null && xx.grams) left[id2] = Math.max(0, left[id2] - xx.grams);
           }
+          if (xx.role === 'main' || xx.role === 'side') needSet[xx.ids[0]] = 1;
         }
       }
       if (chosen.length < servings) continue;
@@ -269,17 +346,38 @@ var Solver = (function () {
         return budget[id] > 0 && left[id] >= budget[id] - 1;
       }).length;
 
+      // 临期库存没排掉是真会烂掉的东西,罚得比一般剩余重
+      var urgentLeft = 0;
+      stage1Result.picks.forEach(function (p) {
+        if (!p.fromStock) return;
+        urgentLeft += (left[p.ingredientId] || 0) * (1 + (p.urgency || 0) * 3);
+      });
+
+      // 营养缺口 —— 这一项早先完全没进打分。
+      // 模拟 400 个场景发现:热量达标率 15%、蛋白 35%,因为求解器只优化浪费和多样性,
+      // 从不看这顿够不够吃。Profile 辛辛苦苦算出来的目标一直没人用。
+      var short = 0;
+      if (opts.target && typeof Nutrition !== 'undefined') {
+        chosen.forEach(function (c) {
+          if (c.nutrition) short += Nutrition.shortfall(c.nutrition, opts.target);
+        });
+        short = short / chosen.length;
+      }
+
       var score = (1 - wasteRatio) * 100
                 + Math.min(methodCount, servings) * 8
                 - missing * 4
-                - untouched * 25;
+                - untouched * 25
+                - urgentLeft * 0.15
+                - short * 120;          // 权重高于浪费 —— 吃不饱比剩一点严重
 
 
 
       if (!best || score > best.score) {
         best = { score: score, chosen: chosen, left: left,
                  wasteRatio: wasteRatio, methodCount: methodCount, missing: missing,
-                 freshLeft: freshLeft, freshBought: freshBought, carryLeft: carryLeft };
+                 freshLeft: freshLeft, freshBought: freshBought, carryLeft: carryLeft,
+                 nutritionShortfall: short };
       }
     }
 
@@ -287,12 +385,82 @@ var Solver = (function () {
     return Object.assign({ ok: true }, best);
   }
 
-  /** 一次跑完两阶段 */
+  /**
+   * 阶段三:采购清单从**最终选定的菜**倒算,不是照抄阶段一的提议。
+   *
+   * ⚠️ 这一步早先没有,是架构上的错。阶段一按「通用性」猜要买什么,阶段二再挑菜 ——
+   *    但阶段二没用上的东西仍然留在清单里。模拟 400 个场景时出现过浪费率 100% 的方案:
+   *    买了一包菜,四顿里一道都没用到。
+   *    **买了一口没吃**不是「浪费率高」,是清单本身错了 —— 那样东西根本不该被买。
+   *
+   * 倒算之后,剩余量只剩下包装规格带来的零头,那才是这个应用真正要对付的东西。
+   */
+  function finalizeShopping(chosen, stage1Result, opts) {
+    var stock = opts.stock || {};
+    var need = {};
+    chosen.forEach(function (c) {
+      c.variant.ingredients.forEach(function (x) {
+        if (x.role !== 'main' && x.role !== 'side' && x.role !== 'staple') return;
+        var id = x.ids[0];
+        var g = (typeof Nutrition !== 'undefined') ? Nutrition.gramsOf(x) : x.grams;
+        if (g == null) return;
+        need[id] = (need[id] || 0) + g;
+      });
+      // 不带主食的菜要配一碗饭,这份米也得进清单
+      var nu = c.nutrition;
+      if (nu && nu.staple) {
+        need[nu.staple.ingredientId] = (need[nu.staple.ingredientId] || 0) + nu.staple.grams;
+      }
+    });
+
+    var buy = [], useStock = [];
+    Object.keys(need).forEach(function (id) {
+      var i = ing(id);
+      if (!i) return;
+      var have = stock[id] || 0;
+      var short = need[id] - have;
+      if (have > 0) {
+        useStock.push({ ingredientId: id, ing: i, needGrams: Math.round(need[id]),
+                        fromStock: true, stockGrams: Math.round(Math.min(have, need[id])) });
+      }
+      if (short <= 0) return;
+      // 调料/米面是 staple 档,不进每周采购清单(DESIGN 第四节)——
+      // 但如果储物柜里压根没有,还是要提醒买
+      if (i.tier === 'staple') {
+        if (typeof Pantry !== 'undefined' && Pantry.hasStaple(id)) return;
+      }
+      var plan = Packaging.plan(id, short);
+      buy.push({ ingredientId: id, ing: i, needGrams: Math.round(short), plan: plan,
+                 kind: i.tier === 'staple' ? 'staple' : (isProtein(i) ? 'protein' : 'veg') });
+    });
+
+    // 按「贵重/占体积」排序:蛋白 → 蔬菜 → 主食调料
+    var order = { protein: 0, veg: 1, staple: 2 };
+    buy.sort(function (a, b) { return (order[a.kind] || 9) - (order[b.kind] || 9); });
+    return { buy: buy, useStock: useStock, need: need };
+  }
+
+  /** 一次跑完 */
   function solve(opts) {
     var s1 = stage1(opts);
     if (!s1.picks.length) return { ok: false, reason: 'no-ingredients' };
     var s2 = stage2(s1, opts.servings, opts);
-    return { ok: s2.ok, stage1: s1, stage2: s2, reason: s2.reason };
+    if (!s2.ok) return { ok: false, stage1: s1, stage2: s2, reason: s2.reason };
+    var s3 = finalizeShopping(s2.chosen, s1, opts);
+
+    // 真实剩余 = 买回来的总量 − 菜谱实际用量,只算 fresh
+    var freshBought = 0, freshLeft = 0, carryLeft = 0;
+    s3.buy.forEach(function (b) {
+      if (!b.plan) return;
+      var leftover = b.plan.total - b.needGrams;
+      if (b.ing.tier === 'fresh') { freshBought += b.plan.total; freshLeft += leftover; }
+      else carryLeft += leftover;
+    });
+    return {
+      ok: true, stage1: s1, stage2: s2, shopping: s3,
+      freshBought: freshBought, freshLeft: freshLeft, carryLeft: carryLeft,
+      wasteRatio: freshBought ? freshLeft / freshBought : 0,
+    };
   }
 
   return {

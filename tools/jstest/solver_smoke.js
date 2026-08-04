@@ -30,3 +30,23 @@ run('标准', 4, base);
 run('一个人一天', 2, base);
 run('两人两天', 8, base);
 run('只有炒锅+不吃辣+20分钟', 4, {equipment:['炒锅'],maxSpicy:0,maxActiveMinutes:20,blacklist:[]});
+
+// ---- 库存紧迫度:放久的鸡蛋会不会被优先排掉 ----
+console.log('\n===== 库存紧迫度');
+const now=new Date();
+const iso=d=>new Date(now.getTime()+d*864e5).toISOString();
+db.pantryItems=[
+  {id:'a',ingredientId:'egg',amount:400,unit:'g',addedAt:iso(-25),expiresAt:iso(5),location:'fridge'},
+  {id:'b',ingredientId:'napa_cabbage',amount:600,unit:'g',addedAt:iso(-11),expiresAt:iso(3),location:'fridge'},
+  {id:'c',ingredientId:'potato',amount:400,unit:'g',addedAt:iso(-2),expiresAt:iso(28),location:'pantry'},
+];
+Pantry.stockSummary(now.toISOString()).forEach(a=>
+  console.log('  '+a.name.padEnd(8)+Math.round(a.grams)+'g  紧迫度 '+a.urgency.toFixed(2)+'  剩 '+a.daysLeft+' 天'));
+const stock={}; db.pantryItems.forEach(it=>stock[it.ingredientId]=(stock[it.ingredientId]||0)+it.amount);
+const r2=Solver.solve({servings:4,constraints:base,stock:stock,mustUse:[],
+                       stockDetail:Pantry.stockSummary(now.toISOString())});
+console.log('  →', r2.stage1.picks.filter(p=>p.fromStock).map(p=>p.ing.name+'(紧迫'+(p.urgency||0).toFixed(2)+')').join(' · ')||'没有库存项被排进来');
+console.log('  排的菜:', r2.stage2.chosen.map(c=>c.recipe.name).join(' · '));
+const usedEgg=r2.stage2.chosen.some(c=>c.variant.ingredients.some(x=>x.ids.includes('egg')));
+const usedCab=r2.stage2.chosen.some(c=>c.variant.ingredients.some(x=>x.ids.includes('napa_cabbage')));
+console.log('  用到鸡蛋:'+usedEgg+'  用到大白菜:'+usedCab);
