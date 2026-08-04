@@ -5,7 +5,7 @@
   var root = document.getElementById('app');
 
   var TABS = [
-    { id: 'plan',    icon: '🍚', label: '本周' },
+    { id: 'plan',    icon: '🍚', label: '记录' },
     { id: 'pantry',  icon: '🧊', label: '库存' },
     { id: 'pkg',     icon: '📦', label: '规格' },
     { id: 'me',      icon: '⚙️', label: '我的' },
@@ -79,89 +79,13 @@
       page.appendChild(placeholder('库存还是空的', [
         '库存不用手动录 —— 采购清单上勾「已买」就会自动按包装规格入库,',
         '某顿点「完成」就自动按用量扣减。',
-        '所以先去「本周」生成一次计划。',
-      ], { label: '去生成本周计划', onclick: function () { current = 'plan'; render(); } }));
+        '所以先去「本周」新建一次做饭记录。',
+      ], { label: '去记一次', onclick: function () { current = 'plan'; render(); } }));
     } else {
-      page.appendChild(renderPlan());
+      RoundsUI.mount(page, { onOpenPkg: function () { current = 'pkg'; render(); } });
     }
     root.appendChild(page);
     root.appendChild(renderTabbar());
-  }
-
-  function renderPlan() {
-    var cfg = Store.get('config', {}) || {};
-    var draft = Store.get('planDraft', { days: 2, perDay: 2 }) || { days: 2, perDay: 2 };
-    var meals = draft.days * draft.perDay;
-
-    var c = Catalog.countAvailable({
-      equipment: cfg.equipment,
-      blacklist: Catalog.expandBlacklist(cfg.blacklist),
-      maxSpicy: cfg.maxSpicy,
-      maxActiveMinutes: cfg.maxActiveMinutes,
-    });
-    var w = h('div', { class: 'wrap' });
-    w.appendChild(h('h1', {}, ['本周']));
-    w.appendChild(h('p', { class: 'sub' }, ['每次做多少是这次的事,不是一次定死的设定']));
-
-    function pick(field, options, label, hint) {
-      return h('div', { class: 'row' }, [
-        h('label', { class: 'lab' }, [label]),
-        h('div', { class: 'seg' }, options.map(function (o) {
-          return h('button', {
-            type: 'button', 'aria-pressed': String(draft[field] === o.v),
-            onclick: function () {
-              draft[field] = o.v;
-              Store.set('planDraft', draft);
-              render();
-            },
-          }, [o.t]);
-        })),
-        hint ? h('div', { class: 'hint' }, [hint]) : h('span', {}),
-      ]);
-    }
-
-    var box = h('div', { class: 'card' });
-    box.appendChild(pick('days', [
-      { v: 1, t: '1 天' }, { v: 2, t: '2 天' }, { v: 3, t: '3 天' },
-    ], '这次做几天?'));
-    box.appendChild(pick('perDay', [
-      { v: 1, t: '只做一顿' }, { v: 2, t: '午饭 + 晚饭' },
-    ], '每天几顿?', '只做晚饭、中午吃外面也很常见'));
-    w.appendChild(box);
-
-    // 包装规格天然是「2 顿的量」,所以顿数直接决定要买几个包 —— 把这层换算摊开给你看,
-    // 而不是等生成完才发现「怎么买了三包菜」。
-    var protein = Math.ceil(meals / 2);
-    var veg = Math.ceil(meals / 2);
-    w.appendChild(h('div', { class: 'note' }, [
-      meals + ' 顿 ≈ ' + protein + ' 个蛋白包 + ' + veg + '-' + (veg + 1) + ' 个蔬菜包。' +
-      '盒马冷鲜肉 300-400g、绿叶菜 300g/袋,一人一顿 150-200g —— ' +
-      '一个包就是两顿的量,所以「主料复用、做法不重复」不是将就,是唯一解。',
-    ]));
-
-    w.appendChild(h('div', { class: 'card' }, [
-      h('div', { style: 'font-weight:600' }, ['菜谱库已就绪']),
-      h('div', { class: 'hint' }, [
-        c.dishes + ' 道菜可做 · ' + c.variants + ' 个做法档位 · 共 ' + c.total + ' 道',
-      ]),
-    ]));
-
-    w.appendChild(h('div', { class: 'note warn' }, [
-      '求解器还没写。下一步是它 —— 先选包(规格是硬约束),再排菜(菜是软的)。',
-    ]));
-
-    w.appendChild(h('div', { class: 'card' }, [
-      h('div', { style: 'font-weight:600;margin-bottom:6px' }, ['在那之前,建议先做一件事']),
-      h('div', { class: 'hint' }, [
-        '包装规格 135 条里几乎没有核实过的。求解器算「买 300g 用 180g 剩 120g」全靠这个数,',
-        '不准的话算出来的「零浪费」是假的。下次逛超市顺手改几个最常买的。',
-      ]),
-      h('button', {
-        class: 'btn ghost', style: 'margin-top:10px',
-        onclick: function () { current = 'pkg'; render(); },
-      }, ['去看包装规格']),
-    ]));
-    return w;
   }
 
   function renderMe() {
