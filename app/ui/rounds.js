@@ -196,17 +196,24 @@ var RoundsUI = (function () {
     var i = rs.findIndex(function (x) { return x.id === r.id; });
     rs[i].solved = {
       at: new Date().toISOString(),
-      shopping: out.stage1.picks.map(function (p) {
+      // 需求克数是主的(菜谱算得出),包装规格只是提示(没人核实过)。
+      // 买多少由你在货架前定,回来记实际克数 —— app 不猜它看不见的东西。
+      shopping: out.shopping.buy.map(function (b) {
         return {
-          ingredientId: p.ingredientId, name: p.ing.name, kind: p.kind,
-          fromStock: !!p.fromStock, urgency: p.urgency, daysLeft: p.daysLeft,
-          packs: p.plan ? p.plan.packs : null,
-          packSize: p.plan ? p.plan.option.netWeight : null,
-          unit: p.plan ? p.plan.option.unit : 'g',
-          total: p.plan ? p.plan.total : p.needGrams,
-          confidence: p.plan ? p.plan.option.confidence : 'C',
-          bought: false,
+          ingredientId: b.ingredientId, name: b.ing.name, kind: b.kind,
+          needGrams: b.needGrams,
+          unit: b.plan ? b.plan.option.unit : 'g',
+          hintPack: b.plan ? b.plan.option.netWeight : null,
+          hintPacks: b.plan ? b.plan.packs : null,
+          hintConfidence: b.plan ? b.plan.option.confidence : null,
+          tier: b.ing.tier,
+          shelfLifeDays: b.ing.shelfLifeDays,
+          bought: false, actualGrams: null,
         };
+      }),
+      useStock: out.shopping.useStock.map(function (u) {
+        return { ingredientId: u.ingredientId, name: u.ing.name,
+                 needGrams: u.needGrams, stockGrams: u.stockGrams };
       }),
       meals: out.stage2.chosen.map(function (c) {
         return { recipeId: c.recipe.id, name: c.recipe.name, method: c.recipe.method,
@@ -214,7 +221,7 @@ var RoundsUI = (function () {
                  totalMinutes: c.variant.totalMinutes, difficulty: c.variant.difficulty,
                  missing: c.missing, cooked: false };
       }),
-      freshWaste: out.stage2.wasteRatio,
+      freshWaste: out.wasteRatio,
       freshLeft: out.stage2.freshLeft, carryLeft: out.stage2.carryLeft,
       methodCount: out.stage2.methodCount,
     };
@@ -232,62 +239,150 @@ var RoundsUI = (function () {
     return out;
   }
 
+  function toggleBought(r, ingredientId) {
+    var rs = rounds();
+    var k = rs.findIndex(function (x) { return x.id === r.id; });
+    var t = rs[k].solved.shopping.filter(function (x) {
+      return x.ingredientId === ingredientId;
+    })[0];
+    if (!t) return;
+    t.bought = !t.bought;
+    if (!t.bought) t.actualGrams = null;
+    saveRounds(rs);
+    syncPantry(rs[k]);
+    render();
+  }
+
+  function setActual(r, ingredientId, grams) {
+    var rs = rounds();
+    var k = rs.findIndex(function (x) { return x.id === r.id; });
+    var t = rs[k].solved.shopping.filter(function (x) {
+      return x.ingredientId === ingredientId;
+    })[0];
+    if (!t) return;
+    t.actualGrams = grams;
+    saveRounds(rs);
+    syncPantry(rs[k]);
+    render();
+  }
+
+  /** 采购勾选 → 库存。以**实际克数**为准,没填就先按需求量记,回头改了会同步。 */
+  function syncPantry(round) {
+    var tag = 'round:' + round.id;
+    // 先清掉这一轮之前写进去的,再按当前状态重建 —— 避免反复勾选写重复
+    Store.set('pantryItems', Pantry.items().filter(function (it) {
+      return it.source !== tag;
+    }));
+    var now = new Date().toISOString();
+    (round.solved.shopping || []).forEach(function (t) {
+      if (!t.bought) return;
+      var g = t.actualGrams != null ? t.actualGrams : t.needGrams;
+      if (!g) return;
+      var it = Pantry.addFromPackage(
+        { id: t.ingredientId, ingredientId: t.ingredientId, netWeight: g, unit: t.unit },
+        now);
+      var list = Pantry.items();
+      list[list.length - 1].source = tag;
+      Store.set('pantryItems', list);
+    });
+  }
+
   function resultView(r) {
     var s = r.solved;
     var box = h('div', { style: 'margin-top:12px' });
 
-    box.appendChild(h('div', { class: s.freshWaste > 0.2 ? 'note warn' : 'note' }, [
-      '生鲜浪费 ' + (s.freshWaste * 100).toFixed(0) + '%' +
-      (s.freshLeft > 1 ? '(剩 ' + Math.round(s.freshLeft) + 'g)' : '') +
-      ' · ' + s.methodCount + ' 种做法' +
-      (s.carryLeft > 1 ? ' · 结转 ' + Math.round(s.carryLeft) + 'g 下次接着用' : ''),
-    ]));
+    // ⚠️ 买之前只能给估计,而且要说清楚是估的 ——
+    //    包装规格 99.3% 没核实过,拿它算出「浪费 13%」再报给用户,
+    //    是把 C 级输入包装成 A 级输出。填了实际克数之后才是真数。
+    var filled = (s.shopping || []).filter(function (x) { return x.actualGrams != null; });
+    var allBought = (s.shopping || []).length > 0 &&
+                    (s.shopping || []).every(function (x) { return x.bought; });
 
-    var useStock = s.shopping.filter(function (x) { return x.fromStock; });
+    if (filled.length) {
+      var need = 0, got = 0;
+      filled.forEach(function (x) { need += x.needGrams; got += x.actualGrams; });
+      var over = got - need;
+      box.appendChild(h('div', { class: over > need * 0.3 ? 'note warn' : 'note' }, [
+        '按你填的实际克数:买了 ' + Math.round(got) + 'g,这次要用 ' + Math.round(need) + 'g,' +
+        (over > 5 ? '**多的 ' + Math.round(over) + 'g 进库存**,下次会优先排掉它们。'
+                  : '基本正好。') +
+        (filled.length < s.shopping.length
+          ? '(还有 ' + (s.shopping.length - filled.length) + ' 样没填)' : ''),
+      ]));
+    } else {
+      box.appendChild(h('div', { class: 'note' }, [
+        s.methodCount + ' 种做法。' +
+        '下面的克数是**菜谱算出来的需求**,准的;括号里的规格是估的,没人核实过 —— ' +
+        '买的时候以货架为准,回来填实际克数。',
+      ]));
+    }
+
+    var useStock = s.useStock || [];
     if (useStock.length) {
-      box.appendChild(h('div', { style: 'font-weight:600;margin:12px 0 6px' }, ['先把这些吃掉']));
+      box.appendChild(h('div', { style: 'font-weight:600;margin:12px 0 6px' }, ['先用库存里的']));
       useStock.forEach(function (it) {
-        box.appendChild(h('div', { class: 'note warn', style: 'margin-bottom:6px' }, [
-          it.name + ' —— 库存里还有 ' + Math.round(it.total) + 'g,' +
-          (it.daysLeft != null
-            ? (it.daysLeft <= 0 ? '已经过期了' : '还有 ' + it.daysLeft + ' 天到期')
-            : '放了有一阵了') +
-          '。这一轮的菜已经按它来排。',
+        box.appendChild(h('div', { class: 'note', style: 'margin-bottom:6px' }, [
+          it.name + ' —— 这次要 ' + it.needGrams + 'g,库存里能出 ' + it.stockGrams + 'g',
         ]));
       });
     }
 
     box.appendChild(h('div', { style: 'font-weight:600;margin:12px 0 6px' }, ['买这些']));
-    s.shopping.filter(function (x) { return !x.fromStock; }).forEach(function (it, i) {
-      var line = h('div', { style: 'display:flex;gap:8px;align-items:center;margin-bottom:6px' });
-      line.appendChild(h('button', {
+    box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
+      '克数是**菜谱算出来的需求**,买的时候拿最接近的规格就行。' +
+      '回来把实际克数填上 —— 多的会进库存,下次优先吃掉。',
+    ]));
+
+    s.shopping.forEach(function (it, i) {
+      var card2 = h('div', { class: 'card', style: 'padding:10px 12px;margin-bottom:8px' });
+      var head = h('div', { style: 'display:flex;gap:8px;align-items:center' });
+      head.appendChild(h('button', {
         type: 'button',
         style: 'border:0;background:none;font-size:18px;cursor:pointer;padding:0',
-        onclick: function () {
-          var rs = rounds();
-          var k = rs.findIndex(function (x) { return x.id === r.id; });
-          var t = rs[k].solved.shopping.filter(function (x) {
-            return x.ingredientId === it.ingredientId;
-          })[0];
-          t.bought = !t.bought;
-          // 勾「已买」自动入库 —— 零额外录入
-          if (t.bought) {
-            Pantry.addFromPackage({ id: t.ingredientId, ingredientId: t.ingredientId,
-                                    netWeight: t.total, unit: t.unit },
-                                  new Date().toISOString());
-          }
-          saveRounds(rs); render();
-        },
+        onclick: function () { toggleBought(r, it.ingredientId); },
       }, [it.bought ? '☑' : '☐']));
-      line.appendChild(h('span', { style: 'flex:1' + (it.bought ? ';opacity:.5' : '') }, [
-        it.name + '  ' +
-        (it.packs > 1 ? it.packSize + it.unit + ' × ' + it.packs : it.total + it.unit),
+      head.appendChild(h('div', { style: 'flex:1' + (it.bought ? ';opacity:.55' : '') }, [
+        h('div', { style: 'font-weight:600' }, [it.name + '  ' + it.needGrams + it.unit]),
+        h('div', { class: 'hint' }, [
+          (it.hintPack
+            ? '常见规格 ' + it.hintPack + it.unit +
+              (it.hintPacks > 1 ? ',大概要 ' + it.hintPacks + ' 份' : '') +
+              '(没核实过,以货架为准)'
+            : '规格未知,按需求量买') +
+          (it.tier === 'fresh' && it.shelfLifeDays
+            ? ' · 冷藏 ' + it.shelfLifeDays + ' 天' : ''),
+        ]),
       ]));
-      line.appendChild(h('span', { class: 'conf conf-' + it.confidence }, [it.confidence]));
-      box.appendChild(line);
+      card2.appendChild(head);
+
+      // 勾了才问实际买了多少 —— 没买之前问这个是噪音
+      if (it.bought) {
+        var line = h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:8px' });
+        line.appendChild(h('span', { class: 'hint' }, ['实际买了']));
+        line.appendChild(h('input', {
+          type: 'number', inputmode: 'decimal',
+          style: 'width:90px',
+          value: it.actualGrams == null ? '' : String(it.actualGrams),
+          placeholder: String(it.hintPack || it.needGrams),
+          onchange: function (e) {
+            var v = parseFloat(e.target.value);
+            setActual(r, it.ingredientId, isNaN(v) ? null : v);
+          },
+        }));
+        line.appendChild(h('span', { class: 'hint' }, [it.unit]));
+        card2.appendChild(line);
+        if (it.actualGrams != null) {
+          var over = it.actualGrams - it.needGrams;
+          card2.appendChild(h('div', { class: 'hint', style: 'margin-top:4px' }, [
+            over > 5 ? '这次用 ' + it.needGrams + it.unit + ',剩 ' + Math.round(over)
+                       + it.unit + ' 进库存'
+                     : (over < -5 ? '⚠️ 比需求少 ' + Math.round(-over) + it.unit + ',可能不够'
+                                  : '正好'),
+          ]));
+        }
+      }
+      box.appendChild(card2);
     });
-    box.appendChild(h('div', { class: 'hint' },
-      ['勾「已买」会按规格自动入库。规格标 C 的没核实过,买的时候顺手看一眼实际克数。']));
 
     box.appendChild(h('div', { style: 'font-weight:600;margin:14px 0 6px' }, ['做这些']));
     s.meals.forEach(function (m, i) {
