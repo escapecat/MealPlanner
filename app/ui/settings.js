@@ -231,9 +231,23 @@ var SettingsUI = (function () {
 
   // ---------------- 页面 ----------------
 
+  function specSection() {
+    var box = h('div', { class: 'card' });
+    box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:10px' }, [
+      '**不校准也不影响记账** —— 采购量按菜谱需求给,剩多少按你填的实际克数算。' +
+      '这里的数字只用来让推荐少给你「用 30g 得买一大包」的菜。',
+    ]));
+    box.appendChild(h('button', {
+      class: 'btn ghost',
+      onclick: function () { if (onNav) onNav(); },
+    }, ['打开包装规格表']));
+    return box;
+  }
+
   var SECTIONS = [
     { id: 'body',    title: '身体数据与目标', render: bodySection },
     { id: 'kitchen', title: '厨房与口味',     render: kitchenSection },
+    { id: 'spec',    title: '包装规格(参考值)', render: specSection },
     { id: 'data',    title: '数据',           render: dataSection },
   ];
 
@@ -258,7 +272,7 @@ var SettingsUI = (function () {
     el.appendChild(w);
   }
 
-  function mount(node, opts) { el = node; onNav = (opts || {}).onNav; render(); }
+  function mount(node, opts) { el = node; onNav = (opts || {}).onOpenPkg; render(); }
 
   return { mount: mount };
 })();

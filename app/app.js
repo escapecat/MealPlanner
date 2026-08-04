@@ -4,10 +4,11 @@
 (function () {
   var root = document.getElementById('app');
 
+  // 规格页降级进「我的」—— 它现在只是推荐用的参考值,不再是记账的地基,
+  // 不该跟「记录/库存」平级占一个主 tab。
   var TABS = [
     { id: 'plan',    icon: '🍚', label: '记录' },
     { id: 'pantry',  icon: '🧊', label: '库存' },
-    { id: 'pkg',     icon: '📦', label: '规格' },
     { id: 'me',      icon: '⚙️', label: '我的' },
   ];
 
@@ -72,9 +73,18 @@
 
     var page = h('div');
     if (current === 'pkg') {
-      PackagesUI.mount(page);
+      var back = h('div', { class: 'wrap', style: 'padding-bottom:0' }, [
+        h('button', {
+          class: 'btn ghost', style: 'width:auto;padding:6px 12px;font-size:13px',
+          onclick: function () { current = 'me'; render(); },
+        }, ['← 回到我的']),
+      ]);
+      page.appendChild(back);
+      var host = h('div');
+      page.appendChild(host);
+      PackagesUI.mount(host);
     } else if (current === 'me') {
-      SettingsUI.mount(page);
+      SettingsUI.mount(page, { onOpenPkg: function () { current = 'pkg'; render(); } });
     } else if (current === 'pantry') {
       PantryUI.mount(page);
     } else {

@@ -1,8 +1,16 @@
-// 包装规格:默认值 + 用户增删改
+// 包装规格:给推荐用的参考值 + 用户增删改
 //
-// 为什么这一页优先级高:全库包装规格 99.3% 未经原文核实(A 级只有 1 条)。
-// 求解器的核心是算「买 300g 用 180g,剩 120g 下顿吃掉」—— 输入是估的,
-// 算出来的「零浪费」就是假的。
+// ⚠️ 这一页的定位改过一次,别按旧理解用它。
+//
+// 早先:采购量和剩余量都按这里的规格算 —— 而 135 条里 A 级只有 1 条,
+//       等于拿 C 级输入算出「浪费 13.3%」再报给用户,把估计值包装成了结论。
+//
+// 现在:**采购清单给的是菜谱算出来的需求克数,买多少由用户在货架前决定并回填实际值。**
+//       库存和剩余量全部基于实际克数,跟这一页无关。
+//
+// 所以这里只剩两个作用,都是「锦上添花」不是「地基」:
+//   1. 排菜时避开「一道菜用 30g、最小包装 300g」这种必然剩一堆的组合
+//   2. 采购清单上给一句「常见规格 300g,大概要 2 份」让你心里有数
 //
 // 三层数据,合并后对外只暴露 merged():
 //   PACKAGES            生成的默认值,重新跑 build_data.py 会被覆盖
@@ -268,14 +276,16 @@ var PackagesUI = (function () {
     var verified = all.filter(function (p) { return p.confidence === 'A'; }).length;
     var hid = hidden().length;
 
-    w.appendChild(h('h1', {}, ['包装规格']));
+    w.appendChild(h('h1', {}, ['包装规格(参考值)']));
     w.appendChild(h('p', { class: 'sub' }, [
-      '默认值大部分没核实过。你在超市看到实际规格,顺手改一下 —— 求解器算「剩多少」全靠它准。',
+      '**不校准也不影响记账准确性** —— 采购量按菜谱需求给,剩多少按你填的实际克数算。',
     ]));
 
-    w.appendChild(h('div', { class: verified < all.length * 0.1 ? 'note warn' : 'note' }, [
-      '已核对 ' + verified + ' / ' + all.length + ' 条' + (hid ? ' · 隐藏了 ' + hid + ' 条' : '') +
-      '。没核对的按估计值算,采购量可能偏差。',
+    w.appendChild(h('div', { class: 'note' }, [
+      '这些数字只做两件事:**排菜时避开「用 30g 得买 300g」的组合**,' +
+      '以及在采购清单上提示「常见规格多大」。' +
+      '已核对 ' + verified + ' / ' + all.length + ' 条' +
+      (hid ? ' · 隐藏了 ' + hid + ' 条' : '') + '。',
     ]));
 
     // ⚠️ 不要求你核实 135 条 —— 那不现实。
@@ -292,9 +302,10 @@ var PackagesUI = (function () {
       if (top.length) {
         var pri = h('div', { class: 'card' });
         pri.appendChild(h('div', { style: 'font-weight:600;margin-bottom:4px' },
-          ['下次逛超市,先核实这几条']));
+          ['想让推荐更准的话,这几条最值得改']));
         pri.appendChild(h('div', { class: 'hint', style: 'margin-bottom:10px' },
           ['按「影响力 = 用到它的菜数 × 一道菜用不完的比例」排的。' +
+           '不改也没关系 —— 改了只是让推荐更少给你「买一大包用一点」的菜。' +
            '剩下 120 多条影响很小,不用管。']));
         top.forEach(function (t, i) {
           var row = h('div', { style: 'margin-bottom:10px' });
