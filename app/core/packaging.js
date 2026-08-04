@@ -57,14 +57,31 @@ var Packaging = (function () {
     return out;
   }
 
+  /** 默认值 + 用户校准 —— 这个合并逻辑必须在 core 里。
+   *
+   * ⚠️ 早先它挂在 PackagesUI(展示层)上,`Packaging` 反过来去读 UI 模块。
+   *    删掉那个页面时差点带出一个静默 bug:UI 没了 → 退回原始 PACKAGES →
+   *    **用户在超市改的规格全被忽略,而且不报错**。
+   *    展示层可以随时删,数据合并不能跟着它走。 */
+  function merged() {
+    var ov = Store.get('packageOverrides', {}) || {};
+    var hid = Store.get('hiddenPackages', []) || [];
+    var mine = Store.get('userPackages', []) || [];
+    var base = PACKAGES.filter(function (p) { return hid.indexOf(p.id) < 0; })
+      .map(function (p) {
+        var o = ov[p.id];
+        return o ? Object.assign({}, p, o, { userEdited: true }) : p;
+      });
+    return base.concat(mine.map(function (p) {
+      return Object.assign({}, p, { userAdded: true, userEdited: true });
+    }));
+  }
+
   var _pkgIndex = null;
   function pkgIndex() {
     if (!_pkgIndex) {
       _pkgIndex = {};
-      // 用 PackagesUI.merged() 才能拿到用户改过/自己加的;它不在时退回原始 PACKAGES
-      var src = (typeof PackagesUI !== 'undefined' && PackagesUI.merged)
-        ? PackagesUI.merged() : PACKAGES;
-      src.forEach(function (p) {
+      merged().forEach(function (p) {
         (_pkgIndex[p.ingredientId] = _pkgIndex[p.ingredientId] || []).push(p);
       });
     }
@@ -128,7 +145,7 @@ var Packaging = (function () {
   }
 
   return {
-    parseText: parseText, parseCount: parseCount,
+    parseText: parseText, parseCount: parseCount, merged: merged,
     optionsFor: optionsFor, smallest: smallest, plan: plan,
     invalidate: invalidate,
   };

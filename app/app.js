@@ -72,23 +72,12 @@
     }
 
     var page = h('div');
-    if (current === 'pkg') {
-      var back = h('div', { class: 'wrap', style: 'padding-bottom:0' }, [
-        h('button', {
-          class: 'btn ghost', style: 'width:auto;padding:6px 12px;font-size:13px',
-          onclick: function () { current = 'me'; render(); },
-        }, ['← 回到我的']),
-      ]);
-      page.appendChild(back);
-      var host = h('div');
-      page.appendChild(host);
-      PackagesUI.mount(host);
-    } else if (current === 'me') {
-      SettingsUI.mount(page, { onOpenPkg: function () { current = 'pkg'; render(); } });
+    if (current === 'me') {
+      SettingsUI.mount(page);
     } else if (current === 'pantry') {
       PantryUI.mount(page);
     } else {
-      RoundsUI.mount(page, { onOpenPkg: function () { current = 'pkg'; render(); } });
+      RoundsUI.mount(page);
     }
     root.appendChild(page);
     root.appendChild(renderTabbar());

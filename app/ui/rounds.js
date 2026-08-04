@@ -5,7 +5,7 @@
 
 var RoundsUI = (function () {
 
-  var el, sheetOpen = false, draft = null, onOpenPkg = null;
+  var el, sheetOpen = false, draft = null, onOpenPkg = null, showBought = false;
 
   function h(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -365,78 +365,116 @@ var RoundsUI = (function () {
       });
     }
 
-    box.appendChild(h('div', { style: 'font-weight:600;margin:12px 0 6px' }, ['买这些']));
-    box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
-      '克数是**菜谱算出来的需求**,买的时候拿最接近的规格就行。' +
-      '回来把实际克数填上 —— 多的会进库存,下次优先吃掉。',
-    ]));
+    // 没买的在上面,买了的沉到底下折叠起来 —— 在超市里要一眼看出还剩什么。
+    // 做完的东西应该缩小让路,而不是因为多了个输入框反而变高。
+    var todo = s.shopping.filter(function (x) { return !x.bought; });
+    var done = s.shopping.filter(function (x) { return x.bought; });
 
-    s.shopping.forEach(function (it, i) {
-      var card2 = h('div', { class: 'card', style: 'padding:10px 12px;margin-bottom:8px' });
+    box.appendChild(h('div', { style: 'font-weight:600;margin:12px 0 4px' }, [
+      todo.length ? '还要买 ' + todo.length + ' 样' : '都买齐了',
+    ]));
+    if (todo.length) {
+      box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
+        '克数是菜谱算出来的需求,拿最接近的规格就行',
+      ]));
+    }
+
+    function shopRow(it, compact) {
+      var card2 = h('div', {
+        class: 'card',
+        style: 'padding:' + (compact ? '8px 12px' : '10px 12px') + ';margin-bottom:6px' +
+               (compact ? ';opacity:.6' : ''),
+      });
       var head = h('div', { style: 'display:flex;gap:8px;align-items:center' });
       head.appendChild(h('button', {
         type: 'button',
-        style: 'border:0;background:none;font-size:18px;cursor:pointer;padding:0',
+        style: 'border:0;background:none;font-size:18px;cursor:pointer;padding:0;flex:0 0 auto',
         onclick: function () { toggleBought(r, it.ingredientId); },
       }, [it.bought ? '☑' : '☐']));
-      head.appendChild(h('div', { style: 'flex:1' + (it.bought ? ';opacity:.55' : '') }, [
+
+      if (compact) {
+        // 买了的:一行搞定,点数字就能改
+        head.appendChild(h('div', { style: 'flex:1' }, [
+          h('span', { style: 'text-decoration:line-through' }, [it.name]),
+          h('span', { class: 'hint' }, [
+            '  ' + (it.actualGrams != null ? it.actualGrams : it.needGrams) + it.unit,
+          ]),
+        ]));
+        head.appendChild(h('button', {
+          class: 'btn ghost',
+          style: 'width:auto;padding:3px 9px;font-size:11px;flex:0 0 auto',
+          onclick: function () {
+            var v = prompt('实际买了多少 ' + it.unit + '?', 
+                           it.actualGrams != null ? it.actualGrams : (it.hintPack || it.needGrams));
+            if (v == null) return;
+            var n2 = parseFloat(v);
+            if (!isNaN(n2)) setActual(r, it.ingredientId, n2);
+          },
+        }, ['改']));
+        card2.appendChild(head);
+        var extra = (it.actualGrams != null ? it.actualGrams : it.needGrams) - it.needGrams;
+        if (extra > 5) {
+          card2.appendChild(h('div', { class: 'hint', style: 'margin-left:26px' }, [
+            '剩 ' + Math.round(extra) + it.unit + ' 进库存',
+          ]));
+        }
+        return card2;
+      }
+
+      head.appendChild(h('div', { style: 'flex:1' }, [
         h('div', { style: 'font-weight:600' }, [it.name + '  ' + it.needGrams + it.unit]),
         h('div', { class: 'hint' }, [
           (it.hintPack
-            ? '常见规格 ' + it.hintPack + it.unit +
-              (it.hintPacks > 1 ? ',大概要 ' + it.hintPacks + ' 份' : '') +
-              '(估的)'
-            : '规格未知,按需求量买') +
-          (it.tier === 'fresh' && it.shelfLifeDays
-            ? ' · 冷藏 ' + it.shelfLifeDays + ' 天' : ''),
+            ? '常见 ' + it.hintPack + it.unit +
+              (it.hintPacks > 1 ? ' × ' + it.hintPacks : '') + '(估的)'
+            : '规格未知') +
+          (it.tier === 'fresh' && it.shelfLifeDays ? ' · 冷藏 ' + it.shelfLifeDays + ' 天' : ''),
         ]),
       ]));
-      // 站在货架前发现规格不对,就地改 —— 不用去翻那 135 条
       if (it.hintPack) {
+        // 这一条的规格准不准要紧吗?要紧的才提示 ——
+        // 「一道菜用 30g、包装 300g」这种错 20% 会明显改变推荐;
+        // 「一道菜用 250g、包装 300g」错一点无所谓。
+        var worth = it.needGrams && it.hintPack && (it.hintPack - it.needGrams) / it.hintPack > 0.5;
         head.appendChild(h('button', {
           class: 'btn ghost',
-          style: 'width:auto;padding:4px 8px;font-size:11px;flex:0 0 auto',
+          style: 'width:auto;padding:4px 8px;font-size:11px;flex:0 0 auto' +
+                 (worth ? ';border-color:var(--warn);color:var(--warn)' : ''),
           onclick: function () {
-            var v = prompt('这包实际是多少 ' + it.unit + '?改了以后排菜会更准,不改也不影响记账。',
-                           it.hintPack);
+            var v = prompt('这包实际是多少 ' + it.unit + '?改了排菜会更准,不改也不影响记账。', it.hintPack);
             if (v == null) return;
-            var n = parseFloat(v);
-            if (isNaN(n) || n <= 0) return;
-            savePkgCorrection(it.ingredientId, n, it.unit);
-            alert('记下了。以后按 ' + n + it.unit + ' 算。');
+            var n3 = parseFloat(v);
+            if (isNaN(n3) || n3 <= 0) return;
+            savePkgCorrection(it.ingredientId, n3, it.unit);
+            alert('记下了,以后按 ' + n3 + it.unit + ' 算。');
           },
-        }, ['规格不对?']));
+        }, [worth ? '规格?' : '规格不对?']));
       }
       card2.appendChild(head);
-
-      // 勾了才问实际买了多少 —— 没买之前问这个是噪音
-      if (it.bought) {
-        var line = h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:8px' });
-        line.appendChild(h('span', { class: 'hint' }, ['实际买了']));
-        line.appendChild(h('input', {
-          type: 'number', inputmode: 'decimal',
-          style: 'width:90px',
-          value: it.actualGrams == null ? '' : String(it.actualGrams),
-          placeholder: String(it.hintPack || it.needGrams),
-          onchange: function (e) {
-            var v = parseFloat(e.target.value);
-            setActual(r, it.ingredientId, isNaN(v) ? null : v);
-          },
-        }));
-        line.appendChild(h('span', { class: 'hint' }, [it.unit]));
-        card2.appendChild(line);
-        if (it.actualGrams != null) {
-          var over = it.actualGrams - it.needGrams;
-          card2.appendChild(h('div', { class: 'hint', style: 'margin-top:4px' }, [
-            over > 5 ? '这次用 ' + it.needGrams + it.unit + ',剩 ' + Math.round(over)
-                       + it.unit + ' 进库存'
-                     : (over < -5 ? '⚠️ 比需求少 ' + Math.round(-over) + it.unit + ',可能不够'
-                                  : '正好'),
-          ]));
-        }
+      if (worth) {
+        card2.appendChild(h('div', { class: 'hint', style: 'margin-left:26px;color:var(--warn)' }, [
+          '这次只用 ' + it.needGrams + it.unit + ',按 ' + it.hintPack + it.unit +
+          ' 买会剩不少 —— 实际规格要是更小,顺手点一下改掉',
+        ]));
       }
-      box.appendChild(card2);
-    });
+      return card2;
+    }
+
+    todo.forEach(function (it) { box.appendChild(shopRow(it, false)); });
+
+    if (done.length) {
+      box.appendChild(h('button', {
+        class: 'btn ghost',
+        style: 'margin-top:10px;margin-bottom:6px;font-size:13px;padding:7px',
+        onclick: function () { showBought = !showBought; render(); },
+      }, [(showBought ? '▾ ' : '▸ ') + '已买 ' + done.length + ' 样']));
+      if (showBought) {
+        done.forEach(function (it) { box.appendChild(shopRow(it, true)); });
+        box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:6px' }, [
+          '默认按需求量记进库存了。买多了的话点「改」填实际克数,多的会算成结转。',
+        ]));
+      }
+    }
 
     // 缺的调料:就地回答「买」还是「我有」,不用去储物柜翻 382 条
     var seas = (s.seasonings || []).filter(function (x) {
