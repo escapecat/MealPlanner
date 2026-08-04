@@ -215,6 +215,22 @@ var RoundsUI = (function () {
         return { ingredientId: u.ingredientId, name: u.ing.name,
                  needGrams: u.needGrams, stockGrams: u.stockGrams };
       }),
+      // 这几道菜要用、而储物柜里没有的调料 —— 只问这几样,不让用户去 382 条里翻。
+      // 「你有郫县豆瓣吗」这个问题只在某道菜要用它的时候才有意义。
+      seasonings: (function () {
+        var need = {};
+        out.stage2.chosen.forEach(function (c) {
+          Pantry.missingSeasonings(c.variant).forEach(function (id) {
+            var i = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
+            if (!i) return;
+            (need[id] = need[id] || { ingredientId: id, name: i.name,
+                                      packaging: i.packaging,
+                                      surplus: !!i.inevitableSurplus, dishes: [] })
+              .dishes.push(c.recipe.name);
+          });
+        });
+        return Object.keys(need).map(function (k) { return need[k]; });
+      })(),
       meals: out.stage2.chosen.map(function (c) {
         return { recipeId: c.recipe.id, name: c.recipe.name, method: c.recipe.method,
                  prepLevel: c.variant.prepLevel, activeMinutes: c.variant.activeMinutes,
@@ -237,6 +253,28 @@ var RoundsUI = (function () {
       (r.solved && r.solved.meals || []).forEach(function (m) { out[m.recipeId] = 1; });
     });
     return out;
+  }
+
+  /** 就地修正包装规格 —— 写进 packageOverrides,和规格页是同一份数据 */
+  function savePkgCorrection(ingredientId, netWeight, unit) {
+    var ov = Store.get('packageOverrides', {}) || {};
+    var existing = PACKAGES.filter(function (p) { return p.ingredientId === ingredientId; })[0];
+    if (existing) {
+      ov[existing.id] = Object.assign({}, ov[existing.id] || {}, {
+        netWeight: netWeight, unit: unit, confidence: 'A',
+        editedAt: new Date().toISOString(),
+      });
+      Store.set('packageOverrides', ov);
+    } else {
+      var list = Store.get('userPackages', []) || [];
+      var i = INGREDIENTS.filter(function (x) { return x.id === ingredientId; })[0];
+      list.push({ id: 'UP-' + ingredientId, ingredientId: ingredientId,
+                  name: (i ? i.name : ingredientId), netWeight: netWeight, unit: unit,
+                  sellMode: '定量预包装', price: null, confidence: 'A',
+                  createdAt: new Date().toISOString() });
+      Store.set('userPackages', list);
+    }
+    if (typeof Packaging !== 'undefined') Packaging.invalidate();
   }
 
   function toggleBought(r, ingredientId) {
@@ -347,12 +385,29 @@ var RoundsUI = (function () {
           (it.hintPack
             ? '常见规格 ' + it.hintPack + it.unit +
               (it.hintPacks > 1 ? ',大概要 ' + it.hintPacks + ' 份' : '') +
-              '(没核实过,以货架为准)'
+              '(估的)'
             : '规格未知,按需求量买') +
           (it.tier === 'fresh' && it.shelfLifeDays
             ? ' · 冷藏 ' + it.shelfLifeDays + ' 天' : ''),
         ]),
       ]));
+      // 站在货架前发现规格不对,就地改 —— 不用去翻那 135 条
+      if (it.hintPack) {
+        head.appendChild(h('button', {
+          class: 'btn ghost',
+          style: 'width:auto;padding:4px 8px;font-size:11px;flex:0 0 auto',
+          onclick: function () {
+            var v = prompt('这包实际是多少 ' + it.unit + '?
+改了以后排菜会更准,不改也不影响记账。',
+                           it.hintPack);
+            if (v == null) return;
+            var n = parseFloat(v);
+            if (isNaN(n) || n <= 0) return;
+            savePkgCorrection(it.ingredientId, n, it.unit);
+            alert('记下了。以后按 ' + n + it.unit + ' 算。');
+          },
+        }, ['规格不对?']));
+      }
       card2.appendChild(head);
 
       // 勾了才问实际买了多少 —— 没买之前问这个是噪音
@@ -383,6 +438,38 @@ var RoundsUI = (function () {
       }
       box.appendChild(card2);
     });
+
+    // 缺的调料:就地回答「买」还是「我有」,不用去储物柜翻 382 条
+    var seas = (s.seasonings || []).filter(function (x) {
+      return !Pantry.hasStaple(x.ingredientId);
+    });
+    if (seas.length) {
+      box.appendChild(h('div', { style: 'font-weight:600;margin:14px 0 6px' },
+        ['还差 ' + seas.length + ' 样调料']));
+      seas.forEach(function (sx) {
+        var line = h('div', { class: 'card', style: 'padding:10px 12px;margin-bottom:6px' });
+        line.appendChild(h('div', {}, [sx.name]));
+        line.appendChild(h('div', { class: 'hint' }, [
+          sx.dishes.slice(0, 2).join(' · ') + (sx.dishes.length > 2 ? ' 等 ' + sx.dishes.length + ' 道菜要用' : ' 要用') +
+          (sx.packaging ? ' · 常见 ' + sx.packaging : ''),
+        ]));
+        if (sx.surplus) {
+          line.appendChild(h('div', { class: 'hint', style: 'color:var(--warn)' },
+            ['⚠️ 最小规格一个人多半吃不完,想清楚再买']));
+        }
+        var btns = h('div', { style: 'display:flex;gap:6px;margin-top:8px' });
+        btns.appendChild(h('button', {
+          class: 'btn ghost', style: 'width:auto;padding:5px 12px;font-size:13px',
+          onclick: function () { Pantry.toggleStaple(sx.ingredientId); render(); },
+        }, ['我有']));
+        btns.appendChild(h('button', {
+          class: 'btn ghost', style: 'width:auto;padding:5px 12px;font-size:13px',
+          onclick: function () { Pantry.toggleStaple(sx.ingredientId); render(); },
+        }, ['买了 · 记进储物柜']));
+        line.appendChild(btns);
+        box.appendChild(line);
+      });
+    }
 
     box.appendChild(h('div', { style: 'font-weight:600;margin:14px 0 6px' }, ['做这些']));
     s.meals.forEach(function (m, i) {
