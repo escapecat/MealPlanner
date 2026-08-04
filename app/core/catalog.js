@@ -92,6 +92,33 @@ var Catalog = (function () {
              total: RECIPES.filter(function (r) { return r.type !== 'prep'; }).length };
   }
 
+  /**
+   * 每件厨具的**边际价值** —— 在你已有的基础上,加上/去掉它会差多少道菜。
+   *
+   * ⚠️ 这个数和「名义上挂着多少道」差很远,而且后者会误导采购决策:
+   *    不粘锅名义挂 79 道,但炒锅几乎全能顶,实际只多解锁 3 道;
+   *    烤箱名义只挂 18 道,却能顶掉空气炸锅那批,实际多 47 道。
+   * 界面上要显示的是这个,不是名义数。
+   */
+  function equipmentMarginal(cfg) {
+    var owned = (cfg.equipment || []).slice();
+    var baseCfg = Object.assign({}, cfg);
+    var base = countAvailable(baseCfg).dishes;
+
+    return equipment().map(function (e) {
+      var has = owned.indexOf(e.name) >= 0;
+      var alt = has ? owned.filter(function (x) { return x !== e.name; })
+                    : owned.concat([e.name]);
+      var n = countAvailable(Object.assign({}, cfg, { equipment: alt })).dishes;
+      return {
+        name: e.name,
+        owned: has,
+        nominal: e.count,                 // 名义上有多少道菜点名要它
+        delta: has ? base - n : n - base, // 有:去掉会损失多少;没有:加上会多多少
+      };
+    }).sort(function (a, b) { return b.delta - a.delta; });
+  }
+
   /** 常见忌口的快选项。⚠️ 这是**配置层的快捷方式**,不是库的收录边界 ——
    *  库里内脏苦瓜折耳根一样不少,勾不勾由用户定。 */
   function commonDislikes() {
@@ -127,7 +154,7 @@ var Catalog = (function () {
     equipment: equipment, methods: methods, flavors: flavors,
     ingredient: ingredient,
     equipmentOK: equipmentOK, availableVariants: availableVariants,
-    countAvailable: countAvailable,
+    countAvailable: countAvailable, equipmentMarginal: equipmentMarginal,
     commonDislikes: commonDislikes, expandBlacklist: expandBlacklist,
   };
 })();

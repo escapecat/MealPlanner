@@ -74,7 +74,7 @@
     if (current === 'pkg') {
       PackagesUI.mount(page);
     } else if (current === 'me') {
-      page.appendChild(renderMe());
+      SettingsUI.mount(page);
     } else if (current === 'pantry') {
       page.appendChild(placeholder('库存还是空的', [
         '库存不用手动录 —— 采购清单上勾「已买」就会自动按包装规格入库,',
@@ -86,59 +86,6 @@
     }
     root.appendChild(page);
     root.appendChild(renderTabbar());
-  }
-
-  function renderMe() {
-    var p = Store.get('profile', {}) || {};
-    var wl = Store.get('weightLog', []) || [];
-    var kg = wl.length ? wl[wl.length - 1].kg : null;
-    var d = Profile.dailyTargets(Object.assign({}, p, { weightKg: kg }));
-
-    var w = h('div', { class: 'wrap' });
-    w.appendChild(h('h1', {}, ['我的']));
-
-    if (d) {
-      w.appendChild(h('div', { class: 'card' }, [
-        h('div', { style: 'font-weight:600' }, ['每日目标']),
-        h('div', {}, [d.kcal + ' kcal · 蛋白 ' + d.protein + 'g · 蔬菜 ' + d.veg + 'g']),
-        h('div', { class: 'hint' }, (function () {
-          var pm = Profile.perPlannedMeal(d, p.breakfast);
-          return ['午饭 / 晚饭各 ' + pm.kcal + ' kcal · 蛋白 ' + pm.protein
-                  + 'g · 蔬菜 ' + pm.veg + 'g  ——  ' + pm.note];
-        })()),
-        h('div', { class: 'hint' }, [
-          '基础代谢 ' + Profile.bmr(Object.assign({}, p, { weightKg: kg })) +
-          ' · 日常消耗 ' + d.tdee + ' · 目标 ' + (Profile.GOAL[p.goal] || {}).label,
-        ]),
-      ]));
-    }
-
-    w.appendChild(h('div', { class: 'card' }, [
-      h('div', { style: 'font-weight:600;margin-bottom:6px' }, ['数据']),
-      h('button', {
-        class: 'btn ghost', style: 'margin-bottom:8px',
-        onclick: function () {
-          var blob = new Blob([JSON.stringify(Store.exportAll(), null, 2)],
-                              { type: 'application/json' });
-          var a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = 'mealplanner-' + new Date().toISOString().slice(0, 10) + '.json';
-          a.click();
-        },
-      }, ['导出备份']),
-      h('button', {
-        class: 'btn ghost',
-        onclick: function () {
-          if (confirm('清空所有数据重新开始?这个动作不能撤销。')) {
-            Store.keys().forEach(function (k) { Store.remove(k); });
-            current = 'plan'; render();
-          }
-        },
-      }, ['重新设置']),
-      h('div', { class: 'hint', style: 'margin-top:8px' },
-        ['数据只存在这台设备的浏览器里。换设备或清缓存前记得导出。']),
-    ]));
-    return w;
   }
 
   render();

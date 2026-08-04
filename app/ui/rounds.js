@@ -38,7 +38,8 @@ var RoundsUI = (function () {
   function openSheet() {
     var rs = rounds();
     var d = Round.defaultsFrom(rs[rs.length - 1], config(), rs);
-    draft = { days: d.days, perDay: d.perDay, autoReduced: d.autoReduced, overrides: {}, more: false };
+    draft = { days: d.days, perDay: d.perDay, diners: d.diners || 1,
+              autoReduced: d.autoReduced, overrides: {}, more: false };
     sheetOpen = true;
     render();
   }
@@ -57,14 +58,30 @@ var RoundsUI = (function () {
       h('label', { class: 'lab' }, ['做几天']),
       seg(function () { return draft.days; },
           function (v) { draft.days = v; },
-          [{ v: 1, t: '1 天' }, { v: 2, t: '2 天' }, { v: 3, t: '3 天' }]),
+          [{ v: 1, t: '1' }, { v: 2, t: '2' }, { v: 3, t: '3' },
+           { v: 4, t: '4' }, { v: 5, t: '5' }, { v: 7, t: '7' }]),
     ]));
+    var fn = Round.freshnessNote(draft.days);
+    if (fn) {
+      card.appendChild(h('div', { class: fn.level === 'warn' ? 'note warn' : 'note' }, [fn.text]));
+    }
     card.appendChild(h('div', { class: 'row' }, [
       h('label', { class: 'lab' }, ['每天几顿']),
       seg(function () { return draft.perDay; },
           function (v) { draft.perDay = v; },
           [{ v: 1, t: '只做一顿' }, { v: 2, t: '午饭 + 晚饭' }]),
     ]));
+    card.appendChild(h('div', { class: 'row' }, [
+      h('label', { class: 'lab' }, ['几个人吃']),
+      seg(function () { return draft.diners; },
+          function (v) { draft.diners = v; },
+          [{ v: 1, t: '1 人' }, { v: 2, t: '2 人' }, { v: 3, t: '3 人' }, { v: 4, t: '4 人' }]),
+      h('div', { class: 'hint' }, [
+        '营养目标仍按**你一个人**算,人数只用来放大份量 —— 别人饭量不同的话自己调',
+      ]),
+    ]));
+    var dn = Round.dinersNote(draft.diners, meals);
+    if (dn) card.appendChild(h('div', { class: 'note' }, [dn]));
 
     if (draft.autoReduced) {
       card.appendChild(h('div', { class: 'note warn' }, [
@@ -74,10 +91,12 @@ var RoundsUI = (function () {
     }
 
     // 包装规格天然是「2 顿的量」,顿数直接决定拎几个包回来
-    var packs = Math.ceil(meals / 2);
+    var servings = meals * draft.diners;
+    var packs = Math.ceil(servings / 2);
     card.appendChild(h('div', { class: 'note' }, [
-      meals + ' 顿 ≈ ' + packs + ' 个蛋白包 + ' + packs + '-' + (packs + 1) + ' 个蔬菜包。' +
-      '肉 300-400g、绿叶菜 300g/袋,一人一顿 150-200g —— 一个包就是两顿的量。',
+      meals + ' 顿 × ' + draft.diners + ' 人 = ' + servings + ' 份 ≈ ' +
+      packs + ' 个蛋白包 + ' + packs + '-' + (packs + 1) + ' 个蔬菜包。' +
+      '肉 300-400g、绿叶菜 300g/袋,一人一顿 150-200g —— 一个包就是两份的量。',
     ]));
 
     // ---- 这次有什么不一样(默认收起,不改就不用点开)----
@@ -139,7 +158,8 @@ var RoundsUI = (function () {
   function create() {
     var rs = rounds();
     var r = Round.create(
-      { days: draft.days, perDay: draft.perDay, overrides: draft.overrides },
+      { days: draft.days, perDay: draft.perDay, diners: draft.diners,
+        overrides: draft.overrides },
       config(), new Date().toISOString()
     );
     rs.push(r);

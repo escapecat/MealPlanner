@@ -183,8 +183,8 @@ var Onboarding = (function () {
     c2.appendChild(h('div', { class: 'row' }, [
       h('label', { class: 'lab' }, ['你有哪些厨具?(括号里是能解锁多少道菜)']),
       chips(
-        Catalog.equipment().map(function (e) {
-          return { id: e.name, label: e.name + ' ' + e.count };
+        Catalog.equipmentMarginal({ equipment: state.equipment }).map(function (m) {
+          return { id: m.name, label: m.name + (m.owned ? ' −' + m.delta : ' +' + m.delta) };
         }),
         function (it) { return state.equipment.indexOf(it.id) >= 0; },
         function (it) {
@@ -193,8 +193,8 @@ var Onboarding = (function () {
         }
       ),
       h('div', { class: 'hint' }, [
-        '不用勾满 —— 炒锅/汤锅/不粘锅在多数做法下能互顶(只有爆炒非炒锅不可),' +
-        '烤箱和空气炸锅也能换。数字已经把替代算进去了。',
+        '数字是边际的:没勾的是「加上能多做几道」,勾了的是「去掉会少几道」。' +
+        '炒锅/汤锅/不粘锅多数做法下能互顶,烤箱和空气炸锅也能换 —— 所以不用勾满。',
       ]),
     ]));
 
