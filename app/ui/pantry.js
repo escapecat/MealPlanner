@@ -12,7 +12,7 @@
 var PantryUI = (function () {
 
   var el, tab = 'fridge', q = '', openCat = null, adding = false, addDraft = null,
-      ingQ = '', browseAll = false;
+      ingQ = '';
 
   function h(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -379,44 +379,12 @@ var PantryUI = (function () {
     Pantry.ensureInit();
     var pool = INGREDIENTS.filter(function (i) { return i.tier === 'staple'; });
     var mine = Pantry.staples() || [];
+    var mineIds = {};
+    mine.forEach(function (e) { mineIds[e.id] = 1; });
 
-    if (q) {
-      w.appendChild(searchBox());
-      var hits = pool.filter(function (i) {
-        var hay = i.name + ' ' + i.id + ' ' + (i.aliases || []).join(' ');
-        return hay.toLowerCase().indexOf(q.toLowerCase()) >= 0;
-      });
-      var c = h('div', { class: 'card', style: 'padding:2px 14px' });
-      if (!hits.length) c.appendChild(h('div', { class: 'hint' }, ['没找到「' + q + '」']));
-      hits.slice(0, 40).forEach(function (i) { c.appendChild(pickRow(i)); });
-      w.appendChild(c);
-      return;
-    }
-
-    if (browseAll) {
-      w.appendChild(h('button', {
-        class: 'btn ghost', style: 'margin-bottom:10px;font-size:13px;padding:8px',
-        onclick: function () { browseAll = false; openCat = null; render(); },
-      }, ['← 只看我有的']));
-      w.appendChild(searchBox());
-      var byCat = {};
-      pool.forEach(function (i) { (byCat[i.category] = byCat[i.category] || []).push(i); });
-      Object.keys(byCat).sort(function (x, y) { return byCat[y].length - byCat[x].length; })
-        .forEach(function (cat) {
-          var list = byCat[cat];
-          var n = list.filter(function (i) { return Pantry.hasStaple(i.id); }).length;
-          w.appendChild(h('button', {
-            class: 'btn ghost', style: 'margin-bottom:6px;text-align:left',
-            onclick: function () { openCat = (openCat === cat ? null : cat); render(); },
-          }, [(openCat === cat ? '▾ ' : '▸ ') + cat + '   ' + n + '/' + list.length]));
-          if (openCat === cat) {
-            var cc = h('div', { class: 'card', style: 'padding:2px 14px' });
-            list.forEach(function (i) { cc.appendChild(pickRow(i)); });
-            w.appendChild(cc);
-          }
-        });
-      return;
-    }
+    // ⚠️ 不做「默认看我有的 / 切模式看全部」—— 加一样调料不该先切界面。
+    //    一页两块:有的在上面(带日期),没有的在下面(勾选),滚到底就行。
+    //    跟冰箱页保持一致:那边也是「快到期 / 一周内 / 还早」都在一页上。
 
     var alerts = Pantry.stapleAlerts(now());
     if (alerts.length) {
@@ -428,38 +396,103 @@ var PantryUI = (function () {
       ]));
     }
 
-    w.appendChild(h('div', { class: 'note' }, [
-      '有 ' + mine.length + ' 样。调料不进每周采购清单 —— 只在没有、或开封快过期时提醒。',
+    w.appendChild(searchBox());
+
+    var filtered = pool;
+    if (q) {
+      filtered = pool.filter(function (i) {
+        var hay = i.name + ' ' + i.id + ' ' + (i.aliases || []).join(' ');
+        return hay.toLowerCase().indexOf(q.toLowerCase()) >= 0;
+      });
+      if (!filtered.length) {
+        w.appendChild(h('div', { class: 'empty' }, [
+          h('div', { class: 'big' }, ['🔍']),
+          h('div', {}, ['没找到「' + q + '」']),
+        ]));
+        return;
+      }
+    }
+
+    // ---- 上半:我有的 ----
+    var have = filtered.filter(function (i) { return mineIds[i.id]; });
+    w.appendChild(h('h2', {}, ['我有的 · ' + have.length +
+      (q ? '' : ' / 共 ' + mine.length + ' 样')]));
+    if (!have.length) {
+      w.appendChild(h('div', { class: 'card' }, [
+        h('div', { class: 'hint' }, [q ? '这个搜索里没有你已有的' : '一样都没勾']),
+      ]));
+    } else {
+      var byCat = {};
+      have.forEach(function (i) { (byCat[i.category] = byCat[i.category] || []).push(i); });
+      Object.keys(byCat).sort().forEach(function (cat) {
+        w.appendChild(h('div', { class: 'hint', style: 'margin:10px 0 2px' }, [cat]));
+        var c = h('div', { class: 'card', style: 'padding:2px 14px' });
+        byCat[cat].sort(function (x, y) { return x.name.localeCompare(y.name, 'zh'); })
+          .forEach(function (i) { c.appendChild(ownedRow(i)); });
+        w.appendChild(c);
+      });
+    }
+
+    // ---- 下半:没有的 ----
+    var missing = filtered.filter(function (i) { return !mineIds[i.id]; });
+    w.appendChild(h('h2', { style: 'margin-top:24px' },
+      ['没有的 · ' + missing.length]));
+    w.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
+      '不用先备齐 —— 生成计划时缺哪样会直接问你。这里是想主动添的时候用的。',
     ]));
 
-    if (!mine.length) {
-      w.appendChild(h('div', { class: 'empty' }, [
-        h('div', { class: 'big' }, ['🧂']),
-        h('div', {}, ['一样都没有']),
-      ]));
+    if (!missing.length) {
+      w.appendChild(h('div', { class: 'card' }, [h('div', { class: 'hint' }, ['都有了'])]));
+      return;
+    }
+
+    // 搜索时直接平铺(结果本来就少);不搜索时按类别折叠,免得 370 条糊脸
+    if (q) {
+      var c2 = h('div', { class: 'card', style: 'padding:2px 14px' });
+      missing.slice(0, 40).forEach(function (i) { c2.appendChild(pickRow(i)); });
+      w.appendChild(c2);
+      if (missing.length > 40) {
+        w.appendChild(h('div', { class: 'hint', style: 'text-align:center' },
+          ['还有 ' + (missing.length - 40) + ' 条,搜得再具体点']));
+      }
+      return;
+    }
+
+    // 先给「加了能多做最多菜」的几样 —— 比让人自己翻类别有用
+    var sug = Pantry.suggestUnlocks(5).filter(function (s2) { return !mineIds[s2.id]; });
+    if (sug.length) {
+      var sb = h('div', { class: 'card' });
+      sb.appendChild(h('div', { style: 'font-weight:600;margin-bottom:6px' },
+        ['添这几样能多做最多菜']));
+      sug.forEach(function (s2) {
+        var r = h('div', { style: 'display:flex;gap:8px;align-items:center;margin-bottom:6px' });
+        r.appendChild(h('button', {
+          class: 'btn ghost', style: 'width:auto;padding:5px 10px;font-size:13px;flex:0 0 auto',
+          onclick: function () { Pantry.toggleStaple(s2.id); render(); },
+        }, ['+ ' + s2.name]));
+        r.appendChild(h('span', { class: 'hint', style: 'flex:1' }, [
+          '解锁 ' + s2.dishes + ' 道' + (s2.inevitableSurplus ? ' · 最小规格单人吃不完' : ''),
+        ]));
+        sb.appendChild(r);
+      });
+      w.appendChild(sb);
     }
 
     var byCat2 = {};
-    mine.forEach(function (e) {
-      var i = INGREDIENTS.filter(function (x) { return x.id === e.id; })[0];
-      if (!i) return;
-      (byCat2[i.category] = byCat2[i.category] || []).push(i);
-    });
-    Object.keys(byCat2).sort().forEach(function (cat) {
-      w.appendChild(h('h2', {}, [cat + ' · ' + byCat2[cat].length]));
-      var c2 = h('div', { class: 'card', style: 'padding:2px 14px' });
-      byCat2[cat].sort(function (x, y) { return x.name.localeCompare(y.name, 'zh'); })
-        .forEach(function (i) { c2.appendChild(ownedRow(i)); });
-      w.appendChild(c2);
-    });
-
-    w.appendChild(h('button', {
-      class: 'btn ghost', style: 'margin-top:12px;font-size:13px;padding:8px',
-      onclick: function () { browseAll = true; render(); },
-    }, ['＋ 添调料(全部 ' + pool.length + ' 种)']));
-    w.appendChild(h('div', { class: 'hint', style: 'text-align:center;margin-top:6px' }, [
-      '生成计划时缺哪样会直接问你 —— 不用先在这儿备齐',
-    ]));
+    missing.forEach(function (i) { (byCat2[i.category] = byCat2[i.category] || []).push(i); });
+    Object.keys(byCat2).sort(function (x, y) { return byCat2[y].length - byCat2[x].length; })
+      .forEach(function (cat) {
+        var list = byCat2[cat];
+        w.appendChild(h('button', {
+          class: 'btn ghost', style: 'margin-bottom:6px;text-align:left',
+          onclick: function () { openCat = (openCat === cat ? null : cat); render(); },
+        }, [(openCat === cat ? '▾ ' : '▸ ') + cat + '   ' + list.length + ' 种']));
+        if (openCat === cat) {
+          var cc = h('div', { class: 'card', style: 'padding:2px 14px' });
+          list.forEach(function (i) { cc.appendChild(pickRow(i)); });
+          w.appendChild(cc);
+        }
+      });
   }
 
   // ---------------- 页面 ----------------
