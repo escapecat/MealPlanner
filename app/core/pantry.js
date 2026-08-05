@@ -58,12 +58,22 @@ var Pantry = (function () {
   function setConfirmed() { Store.set('staplesConfirmed', true); }
 
   function ensureInit() {
-    if (staples() === null) { Store.set('staples', []); return staples(); }
+    if (staples() === null) {
+      Store.set('staples', []);
+      Store.set('staplesMigrated', true);      // 全新用户没有可迁移的东西
+      return staples();
+    }
 
     // 迁移:清掉旧版本自动塞进去的那 11 样。
-    // 判据是「全都在 STARTER 里 + 全都没有买入时间」= 没人动过的自动注入形状;
-    // 只要用户勾过/改过任何一样就不动他的数据。
-    if (!confirmed()) {
+    //
+    // ⚠️ **必须只跑一次**,用标记位,不能每次现推形状。
+    //    第一版的判据是「全都在 STARTER 里 + 全都没有时间戳」= 自动注入的形状。
+    //    可是用户在清点清单里勾「食盐」存进去的**正好也是这个形状**
+    //    (清点时故意不盖时间戳)—— 于是下一次 render 就把他刚勾的当成
+    //    残留抹掉了,表现出来是「勾了没反应,点不动」。
+    //    一次性迁移写成每帧重算的推断,就会把用户的新数据误判成旧数据。
+    if (!Store.get('staplesMigrated', false)) {
+      Store.set('staplesMigrated', true);
       var cur = staples();
       var untouched = cur.length > 0 && cur.every(function (e) {
         return STARTER.indexOf(e.id) >= 0 && !e.addedAt && !e.openedAt;
@@ -71,6 +81,31 @@ var Pantry = (function () {
       if (untouched) Store.set('staples', []);
     }
     return staples();
+  }
+
+  /** 字典里没有的调料 —— 也得能记。
+   *  entry 上直接带 name;解析走 resolve(),不去字典里找。 */
+  function addCustomStaple(name, boughtAt) {
+    var id = 'custom:' + name;
+    if (hasStaple(id)) return null;
+    var list = (staples() || []).slice();
+    list.push({
+      id: id, name: name, custom: true,
+      addedAt: arguments.length < 2 ? new Date().toISOString() : boughtAt,
+      openedAt: null,
+    });
+    Store.set('staples', list);
+    return id;
+  }
+
+  /** 把一条 staple 记录解析成可显示的东西。
+   *  自定义条目没有字典背书 —— 没有保质期、没有菜谱关联,如实返回。 */
+  function resolve(entry) {
+    if (!entry) return null;
+    var ing = INGREDIENTS.filter(function (i) { return i.id === entry.id; })[0];
+    if (ing) return ing;
+    return { id: entry.id, name: entry.name || entry.id, category: '自己加的',
+             custom: true, packaging: null, shelfLifeDays: null, openedShelfLifeDays: null };
   }
 
   function stapleEntry(id) {
@@ -330,6 +365,7 @@ var Pantry = (function () {
   return {
     STARTER: STARTER, staples: staples, stapleEntry: stapleEntry,
     confirmed: confirmed, setConfirmed: setConfirmed,
+    addCustomStaple: addCustomStaple, resolve: resolve,
     setBought: setBought, unopenedDaysLeft: unopenedDaysLeft, openedDaysLeft: openedDaysLeft,
     worthTrackingOpened: worthTrackingOpened, setOpened: setOpened,
     stapleAlerts: stapleAlerts, surplusWarning: surplusWarning,

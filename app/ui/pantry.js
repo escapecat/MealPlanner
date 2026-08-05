@@ -386,21 +386,24 @@ var PantryUI = (function () {
   }
 
   /** 全库浏览/搜索时用的勾选行。
-   *  @param unknownDate 勾上时不盖今天的时间戳(第一次开柜子清点用) */
+   *  @param unknownDate 勾上时不盖今天的时间戳(第一次开柜子清点用)
+   *
+   *  ⚠️ **整行都要能点**。第一版只有那个 18px 的 ☐ 是按钮,
+   *     手指去点「食盐」这三个字是没反应的 —— 而那才是人自然会点的地方。 */
   function pickRow(ing, unknownDate) {
     var has = Pantry.hasStaple(ing.id);
+    var hit = function () {
+      if (unknownDate) Pantry.toggleStaple(ing.id, null);
+      else Pantry.toggleStaple(ing.id);
+      render();
+    };
     var row = h('div', {
-      style: 'display:flex;gap:10px;align-items:center;padding:7px 0;' +
+      style: 'display:flex;gap:10px;align-items:center;padding:9px 0;cursor:pointer;' +
              'border-bottom:1px solid var(--border)',
+      onclick: hit,
     });
-    row.appendChild(h('button', {
-      type: 'button',
-      style: 'border:0;background:none;font-size:18px;cursor:pointer;padding:0;flex:0 0 auto',
-      onclick: function () {
-        if (unknownDate) Pantry.toggleStaple(ing.id, null);
-        else Pantry.toggleStaple(ing.id);
-        render();
-      },
+    row.appendChild(h('span', {
+      style: 'font-size:18px;flex:0 0 auto;line-height:1',
     }, [has ? '☑' : '☐']));
     var al = q ? Search.matchedAlias(ing, q) : null;
     row.appendChild(h('div', { style: 'flex:1' + (has ? '' : ';color:var(--text-dim)') }, [
@@ -494,6 +497,21 @@ var PantryUI = (function () {
         w.appendChild(h('div', { class: 'hint', style: 'text-align:center' },
           ['还有 ' + (r.total - r.hits.length) + ' 个,搜具体点']));
       }
+
+      // 字典 628 条不可能全 —— 你家那瓶得能记上,哪怕库里没有。
+      // 自定义条目没有保质期、也接不上菜谱,如实标出来,不假装它和别的一样。
+      if (!Pantry.hasStaple('custom:' + q)) {
+        w.appendChild(h('button', {
+          class: 'btn ghost', style: 'margin-top:10px',
+          onclick: function () {
+            Pantry.addCustomStaple(q);
+            q = ''; render();
+          },
+        }, ['＋ 库里没有,按「' + q + '」记下']));
+        w.appendChild(h('div', { class: 'hint', style: 'text-align:center;margin-top:6px' }, [
+          '自己加的条目只记「有/没有」和买入时间 —— 保质期和菜谱关联都接不上',
+        ]));
+      }
       return;
     }
 
@@ -505,10 +523,9 @@ var PantryUI = (function () {
       return;
     }
 
-    // 一个平铺列表,按类别排序但不切标题
-    var list = mine.map(function (e) {
-      return INGREDIENTS.filter(function (x) { return x.id === e.id; })[0];
-    }).filter(Boolean);
+    // 一个平铺列表,按类别排序但不切标题。
+    // 走 Pantry.resolve 而不是直接查字典 —— 否则自己加的条目会被静默丢掉。
+    var list = mine.map(function (e) { return Pantry.resolve(e); }).filter(Boolean);
     list.sort(function (a, b) {
       if (a.category !== b.category) return (a.category || '').localeCompare(b.category || '', 'zh');
       return a.name.localeCompare(b.name, 'zh');
