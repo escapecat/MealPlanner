@@ -138,13 +138,20 @@ var Catalog = (function () {
     return out;
   }
 
-  /** 把 @category: 之类的组展开成真实 id 列表 */
+  /** 把 @category: / @allergen: 展开成真实 id 列表。
+   *  过敏原尤其要整组展开 —— 「花生过敏」屏蔽的不是 `花生米` 一条,
+   *  而是花生米 · 花生酱 · 花生油,漏一个就出事。 */
   function expandBlacklist(list) {
     var out = [];
     (list || []).forEach(function (b) {
       if (b.indexOf('@category:') === 0) {
         var c = b.slice(10);
         INGREDIENTS.forEach(function (i) { if (i.category === c) out.push(i.id); });
+      } else if (b.indexOf('@allergen:') === 0) {
+        var a = b.slice(10);
+        INGREDIENTS.forEach(function (i) {
+          if ((i.allergens || []).indexOf(a) >= 0) out.push(i.id);
+        });
       } else out.push(b);
     });
     return out;

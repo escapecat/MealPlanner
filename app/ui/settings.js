@@ -180,7 +180,9 @@ var SettingsUI = (function () {
         list.map(function (id) {
           var name = id.indexOf('@category:') === 0
             ? id.slice(10) + '(整类)'
-            : ((Catalog.ingredient(id) || {}).name || id);
+            : id.indexOf('@allergen:') === 0
+              ? id.slice(10) + ' 过敏(整组)'
+              : ((Catalog.ingredient(id) || {}).name || id);
           return h('button', {
             type: 'button', 'aria-pressed': 'true',
             onclick: function () {
@@ -219,11 +221,29 @@ var SettingsUI = (function () {
     host.innerHTML = '';
     if (!blQ) return;
     var list = (cfg.blacklist || []);
+    var groups = Search.findGroups(blQ);
     var r = Search.find(blQ, null, 10);
-    if (!r.total) {
+    if (!r.total && !groups.length) {
       host.appendChild(h('div', { class: 'hint' }, ['没找到「' + blQ + '」']));
       return;
     }
+    if (groups.length) {
+      host.appendChild(h('div', { class: 'hint' }, ['整类:']));
+      host.appendChild(h('div', { class: 'chips', style: 'margin-bottom:8px' },
+        groups.map(function (g) {
+          var on = list.indexOf(g.id) >= 0;
+          return h('button', {
+            type: 'button', 'aria-pressed': String(on),
+            onclick: function () {
+              var next = on ? list.filter(function (x) { return x !== g.id; })
+                            : list.concat([g.id]);
+              saveConfig({ blacklist: next });
+            },
+          }, [(on ? '✓ ' : '+ ') + g.name +
+              (g.kind === 'allergen' ? ' 过敏' : '') + '(' + g.count + ' 种)']);
+        })));
+    }
+    if (!r.total) return;
     host.appendChild(h('div', { class: 'chips' }, r.hits.map(function (i) {
       var on = list.indexOf(i.id) >= 0;
       var al = Search.matchedAlias(i, blQ);

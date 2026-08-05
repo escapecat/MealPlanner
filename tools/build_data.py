@@ -71,6 +71,58 @@ def yes(s):
     return s.strip().startswith('是')
 
 
+# 过敏原的规范写法。字典里出现过 `**大豆**`、`甲壳类`、`鱼类` 这些变体,
+# 求解器按字段过滤时对不上就会漏。
+ALLERGEN_CANON = {
+    '甲壳类': '甲壳', '鱼类': '鱼', '乳制品': '乳', '蛋类': '蛋',
+    '小麦': '麸质', '麸质(小麦)': '麸质',
+}
+
+
+def allergens(text):
+    """把过敏原列解析成干净的名字列表。
+
+    ⚠️ 只按 `·` 切,不能按 `、` 或 `/` 切 —— 那两个符号出现在括号里的说明文字中。
+       早先用通用的 split_list(按 /·、 一起切),把
+       `**菠萝蛋白酶**(口腔刺痛/过敏)` 劈成了两个「过敏原」:
+       `**菠萝蛋白酶**(口腔刺痛` 和 `过敏)`。
+       25 个过敏原里有 14 个是这么来的碎片。
+    """
+    if not text or text.strip() == '—':
+        return []
+    out = []
+    # 先按 · 切,再按括号外的 / 切 —— `甲壳类(虾酱)· 鱼类(鱼露)` 和 `甲壳/鱼` 都要能拆
+    parts = []
+    for seg in text.split('·'):
+        depth = 0
+        buf = ''
+        for ch in seg:
+            if ch in '((':
+                depth += 1
+            elif ch in '))':
+                depth = max(0, depth - 1)
+            if ch == '/' and depth == 0:
+                parts.append(buf)
+                buf = ''
+            else:
+                buf += ch
+        parts.append(buf)
+    for part in parts:
+        part = part.strip().replace('*', '')
+        part = re.sub(r'[((].*?[))]', '', part).strip()   # 去掉括号说明
+        part = re.sub(r'[((].*$', '', part).strip()        # 括号没闭合的也去掉
+        if not part or part == '—':
+            continue
+        out.append(ALLERGEN_CANON.get(part, part))
+    # 去重保序
+    seen, res = set(), []
+    for x in out:
+        if x not in seen:
+            seen.add(x)
+            res.append(x)
+    return res
+
+
 def split_list(s):
     if not s:
         return []
@@ -207,7 +259,7 @@ def build_ingredients():
                     'aliases': split_list(cell(r, h, '别名')),
                     'category': cell(r, h, '类别'),
                     'tier': cell(r, h, 'tier', 'staple' if prepared else ''),
-                    'allergens': split_list(cell(r, h, '过敏原')),
+                    'allergens': allergens(cell(r, h, '过敏原')),
                     'hasAlcohol': yes(cell(r, h, '含酒')),
                     'hasBones': yes(cell(r, h, '有刺')) if '有刺' in h else None,
                     'vegLevel': cell(r, h, '素食等级') or None,
