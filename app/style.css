@@ -67,7 +67,7 @@ h2 { font-size: 16px; margin: 24px 0 8px; }
 
 label.lab { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
 
-input[type=number], input[type=text], select {
+input[type=number], input[type=text], input[type=date], select {
   width: 100%; padding: 9px 10px;
   background: var(--surface); color: var(--text);
   border: 1px solid var(--border); border-radius: 8px;
@@ -106,6 +106,54 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn.ghost { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.btn.danger { background: var(--danger); color: #fff; }
+
+/* ---- 应用内弹层 ----
+   替掉 prompt / confirm / alert:系统弹窗不认 --bg,深色模式下白花花一片,
+   而且各平台各长各的样。手机上从底部升起(拇指够得着),宽屏居中。 */
+.modal-mask {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0, 0, 0, .42);
+  display: flex; align-items: flex-end; justify-content: center;
+  animation: modal-fade .16s ease;
+}
+.modal-mask.closing { animation: modal-fade .14s ease reverse; }
+@keyframes modal-fade { from { opacity: 0 } to { opacity: 1 } }
+
+.modal-sheet {
+  width: 100%; max-width: 460px;
+  background: var(--surface); color: var(--text);
+  border-radius: 16px 16px 0 0;
+  padding: 20px 18px calc(18px + env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, .18);
+  max-height: 86vh; overflow-y: auto;
+  animation: modal-rise .2s cubic-bezier(.2, .8, .3, 1);
+}
+@keyframes modal-rise { from { transform: translateY(14px) } to { transform: none } }
+.modal-mask.closing .modal-sheet { animation: none; }
+
+@media (min-width: 560px) {
+  .modal-mask { align-items: center; }
+  .modal-sheet { border-radius: var(--radius); }
+}
+
+.modal-title { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+.modal-hint  { font-size: 13px; color: var(--text-dim); margin-bottom: 14px; line-height: 1.5;
+               white-space: pre-line; }   /* 多行说明按 \n 断行 */
+
+/* 选择题:一个动作一个按钮。以前是 prompt 里让人输数字选菜单项。 */
+.modal-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.modal-opt {
+  text-align: left; width: 100%; padding: 11px 13px;
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px;
+  font: inherit; cursor: pointer;
+}
+.modal-opt:hover { border-color: var(--accent); }
+.modal-opt.danger { color: var(--danger); }
+.modal-opt.danger:hover { border-color: var(--danger); background: var(--danger-dim); }
+.modal-opt-label { font-size: 15px; }
+.modal-opt-hint  { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 
 .hint { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
 

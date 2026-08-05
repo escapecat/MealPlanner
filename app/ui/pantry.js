@@ -98,10 +98,19 @@ var PantryUI = (function () {
       }, [label]);
     }
     row.appendChild(act('改数量', function () {
-      var v = prompt('现在还剩多少 ' + (it.unit || 'g') + '?', Math.round(it.amount));
-      if (v == null) return;
-      var n = parseFloat(v);
-      if (!isNaN(n)) { setAmount(it.id, n); render(); }
+      Modal.ask({
+        title: (ing ? ing.name : '') + ' 还剩多少?',
+        hint: '称一下最准;估个数也比不记强。',
+        type: 'number', value: Math.round(it.amount), suffix: it.unit || 'g',
+        presets: [
+          { label: '还剩一半', value: Math.round(it.amount / 2) },
+          { label: '剩一点点', value: Math.round(it.amount * 0.2) },
+        ],
+      }).then(function (v) {
+        if (v == null) return;
+        var n = parseFloat(v);
+        if (!isNaN(n)) { setAmount(it.id, n); render(); }
+      });
     }));
     row.appendChild(act('吃完了', function () { removeItem(it.id); render(); }));
 
@@ -109,21 +118,31 @@ var PantryUI = (function () {
     //    所以必须另给一个「记错了」—— 否则用户拿「扔了」当通用删除键,
     //    系统就会以为他真扔了食物,「什么东西总是剩」的结论跟着变成垃圾。
     row.appendChild(act('扔了', function () {
-      var def = Math.round(it.amount);
-      var v = prompt('扔了多少 ' + (it.unit || 'g') + '?(只扔了一部分就改小)\n' +
-                     '记下来才能看出什么东西总是剩。', def);
-      if (v == null) return;
-      var n = parseFloat(v);
-      if (isNaN(n) || n <= 0) return;
-      logWaste(it, Math.min(n, it.amount));
-      if (n >= it.amount) removeItem(it.id);
-      else setAmount(it.id, it.amount - n);
-      render();
+      Modal.ask({
+        title: '扔了多少 ' + (ing ? ing.name : '') + '?',
+        hint: '记下来才能看出什么东西总是剩 —— 这是唯一没法自动观测的一步。',
+        type: 'number', value: Math.round(it.amount), suffix: it.unit || 'g',
+        ok: '记一笔浪费',
+        presets: [
+          { label: '全扔了', value: Math.round(it.amount) },
+          { label: '扔了一半', value: Math.round(it.amount / 2) },
+        ],
+      }).then(function (v) {
+        if (v == null) return;
+        var n = parseFloat(v);
+        if (isNaN(n) || n <= 0) return;
+        logWaste(it, Math.min(n, it.amount));
+        if (n >= it.amount) removeItem(it.id);
+        else setAmount(it.id, it.amount - n);
+        render();
+      });
     }, true));
     row.appendChild(act('记错了', function () {
-      if (!confirm('直接删掉这条,不算浪费也不算吃掉?')) return;
-      removeItem(it.id);
-      render();
+      Modal.confirm({
+        title: '直接删掉这条?',
+        body: '不算浪费、也不算吃掉 —— 就当没记过。浪费统计不会受影响。',
+        ok: '删掉', danger: true,
+      }).then(function (ok) { if (ok) { removeItem(it.id); render(); } });
     }));
     box.appendChild(row);
     return box;
@@ -229,11 +248,17 @@ var PantryUI = (function () {
           }, [o[1]]);
         })),
     ]));
+    // ⚠️ 校验不弹窗。「先选是什么」这种话弹出来打断一下、还得点确定,
+    //    远不如直接在按钮下面写一行 —— 错在哪儿眼睛就在哪儿。
+    var err = h('div', { class: 'note warn', style: 'display:none;margin-bottom:10px' });
+    box.appendChild(err);
+    function fail(msg) { err.textContent = msg; err.style.display = 'block'; }
+
     box.appendChild(h('button', {
       class: 'btn',
       onclick: function () {
-        if (!addDraft.ingredientId) { alert('先选是什么'); return; }
-        if (!addDraft.amount) { alert('填个克数'); return; }
+        if (!addDraft.ingredientId) { fail('还没选是什么 —— 上面搜一下'); return; }
+        if (!addDraft.amount) { fail('还差克数 —— 估个数也行'); return; }
         Pantry.addFromPackage({ id: addDraft.ingredientId, ingredientId: addDraft.ingredientId,
                                 netWeight: addDraft.amount, unit: 'g' },
                               now(), addDraft.location);
@@ -352,37 +377,64 @@ var PantryUI = (function () {
     return row;
   }
 
+  /** ⚠️ 以前这里是一个 prompt,内容是「1 = 改买入日期 / 2 = ... 输入数字:」——
+   *    让人在弹窗里打数字选菜单项。选择题就该给按钮。 */
   function editStaple(ing, entry) {
-    var lines = [
-      ing.name,
-      '1 = 改买入日期',
-      entry.openedAt ? '2 = 改开封日期' : '2 = 标记为已开封',
-      '3 = 用完了(正常吃完)',
-      '4 = 记错了 / 其实没有(直接删掉)',
-      '',
-      '输入数字:',
-    ];
-    var pick = prompt(lines.join('\n'));
-    if (!pick) return;
-    pick = pick.trim();
-    if (pick === '1') {
-      var d = prompt('买入日期(YYYY-MM-DD),留空表示不记得',
-                     entry.addedAt ? entry.addedAt.slice(0, 10) : '');
-      if (d === null) return;
-      Pantry.setBought(ing.id, d ? new Date(d).toISOString() : null);
-    } else if (pick === '2') {
-      var d2 = prompt('开封日期(YYYY-MM-DD),留空表示还没开封',
-                      entry.openedAt ? entry.openedAt.slice(0, 10)
-                                     : new Date().toISOString().slice(0, 10));
-      if (d2 === null) return;
-      Pantry.setOpened(ing.id, d2 ? new Date(d2).toISOString() : null);
-    } else if (pick === '3' || pick === '4') {
-      // 调料是二元的(有/没有),两种情况都是从柜子里去掉。
-      // 但分开问是有意义的:以后要统计「多久用完一瓶」时,得分得清
-      // 「用完了」和「压根没有过」。
+    var custom = !!(ing && ing.custom);
+    Modal.pick({
+      title: ing.name,
+      hint: custom ? '自己加的条目 —— 库里没有保质期数据,只记有没有和时间。' : null,
+      options: [
+        { key: 'bought', label: '改买入时间',
+          hint: entry.addedAt ? '现在记的是 ' + entry.addedAt.slice(0, 10) : '现在没记' },
+        { key: 'opened', label: entry.openedAt ? '改开封时间' : '标记为已开封',
+          hint: entry.openedAt ? '现在记的是 ' + entry.openedAt.slice(0, 10)
+                               : (ing.openedShelfLifeDays
+                                  ? '开封后只能放 ' + ing.openedShelfLifeDays + ' 天'
+                                  : null) },
+        { key: 'used', label: '用完了', hint: '正常吃完,从柜子里去掉' },
+        { key: 'wrong', label: '记错了,其实没有', hint: '当没记过', danger: true },
+      ],
+    }).then(function (pick) {
+      if (!pick) return;
+
+      if (pick === 'bought') {
+        return Modal.ask({
+          title: '什么时候买的?',
+          hint: '不记得就留空 —— 空着比填个假日期强,保质期提醒会跟着关掉。',
+          type: 'date', value: entry.addedAt ? entry.addedAt.slice(0, 10) : '',
+          allowEmpty: true, emptyLabel: '不记得了',
+          presets: [{ label: '今天', value: new Date().toISOString().slice(0, 10) }],
+        }).then(function (d) {
+          if (d == null) return;
+          Pantry.setBought(ing.id, d ? new Date(d).toISOString() : null);
+          render();
+        });
+      }
+
+      if (pick === 'opened') {
+        return Modal.ask({
+          title: '什么时候开封的?',
+          hint: ing.openedShelfLifeDays
+            ? '这样能算出还能放多久(开封后 ' + ing.openedShelfLifeDays + ' 天)。'
+            : '库里没有这样东西的开封保质期,填了也算不出剩余天数。',
+          type: 'date',
+          value: entry.openedAt ? entry.openedAt.slice(0, 10)
+                                : new Date().toISOString().slice(0, 10),
+          allowEmpty: true, emptyLabel: '其实还没开封',
+          presets: [{ label: '今天', value: new Date().toISOString().slice(0, 10) }],
+        }).then(function (d) {
+          if (d == null) return;
+          Pantry.setOpened(ing.id, d ? new Date(d).toISOString() : null);
+          render();
+        });
+      }
+
+      // 「用完了」和「记错了」都是从柜子里去掉,但分开问是有意义的:
+      // 以后统计「多久用完一瓶」时,得分得清「用完了」和「压根没有过」。
       Pantry.toggleStaple(ing.id);
-    } else return;
-    render();
+      render();
+    });
   }
 
   /** 全库浏览/搜索时用的勾选行。
@@ -413,15 +465,6 @@ var PantryUI = (function () {
       ]),
     ]));
     return row;
-  }
-
-  function searchBox() {
-    return h('div', { class: 'row' }, [
-      h('input', {
-        type: 'text', placeholder: '搜调料…… 例:豆瓣 / 咖喱 / 鱼露', value: q,
-        oninput: function (e) { q = e.target.value.trim(); render(); },
-      }),
-    ]);
   }
 
   function renderStaples(w) {
@@ -472,6 +515,7 @@ var PantryUI = (function () {
 
     w.appendChild(h('div', { class: 'row' }, [
       h('input', {
+        id: 'staple-q',                       // 稳定 id —— keepFocus 靠它把焦点找回来
         type: 'text', placeholder: '买了新调料?搜一下加进来', value: q,
         oninput: function (e) { q = e.target.value.trim(); render(); },
       }),
@@ -560,7 +604,28 @@ var PantryUI = (function () {
 
   // ---------------- 页面 ----------------
 
-  function render() {
+  /** ⚠️ render() 把整棵子树重建,输入框跟着被销毁 —— 焦点和光标位置一起没了。
+   *    表现是**打一个字就得重新点一下输入框**,搜索框基本没法用。
+   *    给输入框一个稳定 id,重建后按 id 找回来,并把光标放回原处。
+   *    (settings 那边是另一种解法:只重渲染结果区、不动输入框。两种都行,
+   *     这里页面结构随 q 变化太大,重建 + 找回焦点更简单。) */
+  function keepFocus(fn) {
+    var a = document.activeElement;
+    var id = a && a.id, ss = null, se = null;
+    if (id && a.tagName === 'INPUT') {
+      try { ss = a.selectionStart; se = a.selectionEnd; } catch (e) {}
+    }
+    fn();
+    if (!id) return;
+    var n = el.querySelector('#' + id);
+    if (!n) return;
+    n.focus();
+    if (ss != null) { try { n.setSelectionRange(ss, se); } catch (e) {} }
+  }
+
+  function render() { keepFocus(doRender); }
+
+  function doRender() {
     el.innerHTML = '';
     var w = h('div', { class: 'wrap' });
     w.appendChild(h('h1', {}, ['库存']));

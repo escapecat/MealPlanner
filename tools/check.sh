@@ -29,8 +29,29 @@ for src in $(grep -o 'src="[^"]*\.js"' app/index.html | sed 's/src="//;s/"//'); 
   [ -e "app/$src" ] || { echo "✗ index.html 引用了不存在的 $src"; fail=1; }
 done
 
+# 回归测试。加进来的都是「看代码看不出来、跑一遍才暴露」的那类:
+#   staples —— 一次性迁移写成每帧重算,把用户刚勾的当残留抹掉(勾了没反应)
+#   modal   —— 弹层挡在所有破坏性操作前面,confirm 认错返回值就会静默删数据
+for t in tools/jstest/staples.js tools/jstest/modal.js; do
+  [ -e "$t" ] || continue
+  if ! node "$t" >/dev/null 2>&1; then
+    echo "✗ 回归测试没过: $t"
+    node "$t" 2>&1 | grep -i "FAIL\|Error" | head -5
+    fail=1
+  fi
+done
+
+# 系统弹窗不该再出现 —— 样式割裂,而且小程序里没有 window.prompt
+if grep -rn "[^.a-zA-Z_]\(prompt\|alert\)(" app/ui/*.js app/core/*.js app/app.js 2>/dev/null \
+   | grep -v "app/ui/modal.js" | grep -v "//" | grep -q .; then
+  echo "✗ 还有 prompt/alert 没换成 Modal:"
+  grep -rn "[^.a-zA-Z_]\(prompt\|alert\)(" app/ui/*.js app/core/*.js app/app.js 2>/dev/null \
+    | grep -v "app/ui/modal.js" | grep -v "//"
+  fail=1
+fi
+
 if [ $fail -eq 0 ]; then
-  echo "✓ 语法 · 数据层 · 脚本引用 全部通过"
+  echo "✓ 语法 · 数据层 · 脚本引用 · 回归测试 全部通过"
 else
   echo "✗ 有问题,别提交"
 fi

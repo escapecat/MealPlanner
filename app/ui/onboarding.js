@@ -249,10 +249,15 @@ var Onboarding = (function () {
   function submit() {
     var v = Profile.validate(state);
     if (!v.ok) {
-      alert('还差几项:\n' + Object.keys(v.errors).map(function (k) {
-        return '· ' + ({ age: '年龄', heightCm: '身高', weightKg: '体重',
-                         activity: '活动量', goal: '目标' }[k] || k) + ' —— ' + v.errors[k];
-      }).join('\n'));
+      var names = { age: '年龄', heightCm: '身高', weightKg: '体重',
+                    activity: '活动量', goal: '目标' };
+      Modal.note({
+        title: '还差 ' + Object.keys(v.errors).length + ' 项',
+        body: Object.keys(v.errors).map(function (k) {
+          return (names[k] || k) + ' —— ' + v.errors[k];
+        }).join('\n'),
+        ok: '回去补上',
+      });
       return;
     }
     var now = new Date().toISOString();

@@ -188,8 +188,11 @@ var RoundsUI = (function () {
       recentRecipeIds: recentIds(),
     });
     if (!out.ok) {
-      alert('这次没排出来(' + (out.reason || '未知') + ')。'
-          + '多半是约束太紧 —— 把耗时上限放宽,或者少勾几样忌口试试。');
+      Modal.note({
+        title: '这次没排出来',
+        body: '原因:' + (out.reason || '未知') + '。多半是约束太紧 —— ' +
+              '把耗时上限放宽,或者少勾几样忌口再试。',
+      });
       return;
     }
     var rs = rounds();
@@ -404,11 +407,18 @@ var RoundsUI = (function () {
           class: 'btn ghost',
           style: 'width:auto;padding:3px 9px;font-size:11px;flex:0 0 auto',
           onclick: function () {
-            var v = prompt('实际买了多少 ' + it.unit + '?', 
-                           it.actualGrams != null ? it.actualGrams : (it.hintPack || it.needGrams));
-            if (v == null) return;
-            var n2 = parseFloat(v);
-            if (!isNaN(n2)) setActual(r, it.ingredientId, n2);
+            Modal.ask({
+              title: '实际买了多少 ' + it.name + '?',
+              hint: '填实际称重的话,进库存的数就是准的,下一轮排菜也会跟着准。',
+              type: 'number', suffix: it.unit,
+              value: it.actualGrams != null ? it.actualGrams : (it.hintPack || it.needGrams),
+              presets: it.hintPack ? [{ label: '就一包 ' + it.hintPack + it.unit,
+                                        value: it.hintPack }] : null,
+            }).then(function (v) {
+              if (v == null) return;
+              var n2 = parseFloat(v);
+              if (!isNaN(n2)) setActual(r, it.ingredientId, n2);
+            });
           },
         }, ['改']));
         card2.appendChild(head);
@@ -441,12 +451,17 @@ var RoundsUI = (function () {
           style: 'width:auto;padding:4px 8px;font-size:11px;flex:0 0 auto' +
                  (worth ? ';border-color:var(--warn);color:var(--warn)' : ''),
           onclick: function () {
-            var v = prompt('这包实际是多少 ' + it.unit + '?改了排菜会更准,不改也不影响记账。', it.hintPack);
-            if (v == null) return;
-            var n3 = parseFloat(v);
-            if (isNaN(n3) || n3 <= 0) return;
-            savePkgCorrection(it.ingredientId, n3, it.unit);
-            alert('记下了,以后按 ' + n3 + it.unit + ' 算。');
+            Modal.ask({
+              title: '这包 ' + it.name + ' 实际是多少?',
+              hint: '看包装上写的净含量。改了以后排菜会更准,不改也不影响这次记账。',
+              type: 'number', suffix: it.unit, value: it.hintPack, ok: '就按这个算',
+            }).then(function (v) {
+              if (v == null) return;
+              var n3 = parseFloat(v);
+              if (isNaN(n3) || n3 <= 0) return;
+              savePkgCorrection(it.ingredientId, n3, it.unit);
+              render();
+            });
           },
         }, [worth ? '规格?' : '规格不对?']));
       }
@@ -563,10 +578,16 @@ var RoundsUI = (function () {
     box.appendChild(h('button', {
       class: 'btn ghost', style: 'margin-top:10px;padding:7px;font-size:13px',
       onclick: function () {
-        if (confirm('删掉这一轮记录?')) {
+        Modal.confirm({
+          title: '删掉这一轮记录?',
+          body: '这一轮的菜、采购清单和实际买入记录都会没掉。' +
+                '已经进冰箱的东西不受影响。',
+          ok: '删掉', danger: true,
+        }).then(function (ok) {
+          if (!ok) return;
           var rs = rounds().filter(function (x) { return x.id !== r.id; });
           saveRounds(rs); render();
-        }
+        });
       },
     }, ['删除']));
     return box;

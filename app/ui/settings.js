@@ -336,10 +336,16 @@ var SettingsUI = (function () {
     box.appendChild(h('button', {
       class: 'btn ghost',
       onclick: function () {
-        if (confirm('清空所有数据重新开始?这个动作不能撤销。')) {
+        Modal.confirm({
+          title: '清空所有数据重新开始?',
+          body: '身体数据、库存、所有轮次记录、浪费记录 —— 全部删掉,不能撤销。' +
+                '想留一份的话先点上面的「导出备份」。',
+          ok: '我确定,清空', danger: true,
+        }).then(function (ok) {
+          if (!ok) return;
           Store.keys().forEach(function (k) { Store.remove(k); });
           location.reload();
-        }
+        });
       },
     }, ['清空重来']));
     box.appendChild(h('div', { class: 'hint', style: 'margin-top:8px' },
