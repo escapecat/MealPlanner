@@ -32,7 +32,8 @@ done
 # 回归测试。加进来的都是「看代码看不出来、跑一遍才暴露」的那类:
 #   staples —— 一次性迁移写成每帧重算,把用户刚勾的当残留抹掉(勾了没反应)
 #   modal   —— 弹层挡在所有破坏性操作前面,confirm 认错返回值就会静默删数据
-for t in tools/jstest/staples.js tools/jstest/modal.js; do
+#   flow    —— 「换掉这道菜」失败是静默的:排除没生效就又给你排同一道,不报错
+for t in tools/jstest/staples.js tools/jstest/modal.js tools/jstest/flow.js; do
   [ -e "$t" ] || continue
   if ! node "$t" >/dev/null 2>&1; then
     echo "✗ 回归测试没过: $t"

@@ -161,6 +161,7 @@ var Catalog = (function () {
     equipment: equipment, methods: methods, flavors: flavors,
     ingredient: ingredient,
     equipmentOK: equipmentOK, availableVariants: availableVariants,
+    variantHasBlacklisted: variantHasBlacklisted,   // 导出给测试:「或」组的规则容易改坏
     countAvailable: countAvailable, equipmentMarginal: equipmentMarginal,
     commonDislikes: commonDislikes, expandBlacklist: expandBlacklist,
   };

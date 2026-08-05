@@ -23,6 +23,7 @@ var RoundsUI = (function () {
   function rounds() { return Store.get('rounds', []) || []; }
   function saveRounds(rs) { Store.set('rounds', rs); }
   function config() { return Store.get('config', {}) || {}; }
+  function saveConfig(patch) { Store.set('config', Object.assign(config(), patch)); }
 
   function seg(get, set, options) {
     return h('div', { class: 'seg' }, options.map(function (o) {
@@ -170,7 +171,7 @@ var RoundsUI = (function () {
 
   // ---------------- 生成 ----------------
 
-  function generate(r) {
+  function generate(r, silent) {
     var cfg = config();
     var cons = Round.effectiveConstraints(r, cfg);
     // 库存里已有的先扣掉,临期的必须排掉 —— 这两条是求解器的输入不是事后过滤
@@ -185,15 +186,18 @@ var RoundsUI = (function () {
       servings: r.input.servings || r.input.meals,
       constraints: cons, stock: stock, mustUse: mustUse,
       stockDetail: Pantry.stockSummary(nowIso),   // 带紧迫度,放久的会被优先排掉
-      recentRecipeIds: recentIds(),
+      // 冷却期 + 这一轮被「换掉」的菜。换掉了还排出来,那个按钮就等于没用。
+      recentRecipeIds: Object.assign(recentIds(), excludedMap(r)),
     });
     if (!out.ok) {
-      Modal.note({
-        title: '这次没排出来',
-        body: '原因:' + (out.reason || '未知') + '。多半是约束太紧 —— ' +
-              '把耗时上限放宽,或者少勾几样忌口再试。',
-      });
-      return;
+      if (!silent) {
+        Modal.note({
+          title: '这次没排出来',
+          body: '原因:' + (out.reason || '未知') + '。多半是约束太紧 —— ' +
+                '把耗时上限放宽,或者少勾几样忌口再试。',
+        });
+      }
+      return false;
     }
     var rs = rounds();
     var i = rs.findIndex(function (x) { return x.id === r.id; });
@@ -247,6 +251,41 @@ var RoundsUI = (function () {
     rs[i].status = 'shopping';
     saveRounds(rs);
     render();
+    return true;
+  }
+
+  /**
+   * 改点什么再重新求解,**排不出来就整个撤销**。
+   *
+   * ⚠️ 换一道菜的代价不该是丢掉整个计划。
+   *    第一版是「先删掉 solved,再求解」—— 要是新忌口把菜谱库卡死了,
+   *    你就同时失去了旧计划和新计划,而且那条忌口还留在设置里,
+   *    之后每次重新生成都会继续失败,根本看不出是哪一步造成的。
+   */
+  function resolveRound(id, mutate) {
+    var beforeRounds = JSON.parse(JSON.stringify(rounds()));
+    var beforeConfig = JSON.parse(JSON.stringify(config()));
+
+    mutate();
+
+    var rs = rounds();
+    var k = rs.findIndex(function (x) { return x.id === id; });
+    delete rs[k].solved;
+    rs[k].status = 'planning';
+    saveRounds(rs);
+
+    if (generate(rs[k], true)) return true;
+
+    Store.set('rounds', beforeRounds);
+    Store.set('config', beforeConfig);
+    render();
+    Modal.note({
+      title: '这样就排不出来了',
+      body: '按新的条件,菜谱库里凑不齐这些顿。刚才那一下已经撤销 —— ' +
+            '原来的计划和忌口都还在。\n\n' +
+            '想换的话,可以先把耗时上限放宽,或者换个别的理由。',
+    });
+    return false;
   }
 
   /** 冷却期:最近两轮做过的菜不再排,免得连着吃同一道 */
@@ -257,6 +296,61 @@ var RoundsUI = (function () {
     });
     return out;
   }
+
+  /** 不该排的菜:这一轮被「换掉」的 + 设置里永久排除的 */
+  function excludedMap(r) {
+    var out = {};
+    ((r.overrides || {}).excludeRecipeIds || []).forEach(function (id) { out[id] = 1; });
+    (config().excludeRecipeIds || []).forEach(function (id) { out[id] = 1; });
+    return out;
+  }
+
+  // ---------------- 菜要用什么 ----------------
+  //
+  // ⚠️ 不存进 solved,现查。
+  //    菜谱的食材是**派生数据** —— 存一份进每一轮的记录,菜谱一改历史轮次就对不上,
+  //    而且同一份数据在库里存了两遍。DESIGN 里那条「能从字典算出来的不许存在菜谱上」
+  //    对这里同样成立。
+
+  function variantOf(m) {
+    var rec = RECIPES.filter(function (x) { return x.id === m.recipeId; })[0];
+    if (!rec) return null;
+    var v = (rec.variants || []).filter(function (x) { return x.prepLevel === m.prepLevel; })[0]
+            || (rec.variants || [])[0];
+    return v ? { recipe: rec, variant: v } : null;
+  }
+
+  /** 这道菜要哪些食材。
+   *  用量就是菜谱写的量,不做换算 —— 求解器里一道菜 = 一份,份数是靠多排几道菜凑的。 */
+  function mealIngredients(m) {
+    var rv = variantOf(m);
+    if (!rv) return [];
+    return (rv.variant.ingredients || []).map(function (it) {
+      var ing = INGREDIENTS.filter(function (x) { return x.id === it.ids[0]; })[0];
+      return {
+        id: it.ids[0],
+        name: (it.names && it.names[0]) || (ing ? ing.name : it.ids[0]),
+        alt: it.ids.length > 1,
+        qty: it.qty, unit: it.unit || 'g', role: it.role,
+        toTaste: it.toTaste,
+      };
+    });
+  }
+
+  /** 这道菜要哪些调料(用来回答「我不想买这瓶」) */
+  function mealSeasonings(m) {
+    var rv = variantOf(m);
+    if (!rv) return [];
+    return (rv.variant.seasonings || []).map(function (it) {
+      var ing = INGREDIENTS.filter(function (x) { return x.id === it.ids[0]; })[0];
+      return {
+        id: it.ids[0],
+        name: (it.names && it.names[0]) || (ing ? ing.name : it.ids[0]),
+        have: it.ids.some(function (id) { return Pantry.hasStaple(id); }),
+      };
+    });
+  }
+
 
   /** 就地修正包装规格 —— 写进 packageOverrides,和规格页是同一份数据 */
   function savePkgCorrection(ingredientId, netWeight, unit) {
@@ -525,28 +619,246 @@ var RoundsUI = (function () {
 
     box.appendChild(h('div', { style: 'font-weight:600;margin:14px 0 6px' }, ['做这些']));
     s.meals.forEach(function (m, i) {
-      box.appendChild(h('div', { class: 'card', style: 'padding:10px 12px;margin-bottom:6px' }, [
-        h('div', {}, [(i + 1) + '. ' + m.name +
-          (m.prepLevel !== 'scratch' ? '(' + m.prepLevel + ')' : '')]),
-        h('div', { class: 'hint' }, [
-          m.method + ' · 动手 ' + m.activeMinutes + ' 分' +
-          (m.totalMinutes > m.activeMinutes ? '(总共 ' + m.totalMinutes + ' 分)' : '') +
-          ' · 难度 ' + m.difficulty +
-          (m.missing ? ' · 缺 ' + m.missing + ' 样调料' : ''),
-        ]),
-      ]));
+      box.appendChild(mealCard(r, m, i));
     });
 
-    box.appendChild(h('button', {
-      class: 'btn ghost', style: 'margin-top:8px;padding:7px;font-size:13px',
-      onclick: function () {
-        var rs = rounds();
-        var k = rs.findIndex(function (x) { return x.id === r.id; });
-        delete rs[k].solved; rs[k].status = 'planning';
-        saveRounds(rs); render();
-      },
-    }, ['重新生成']));
+    box.appendChild(nextStep(r));
     return box;
+  }
+
+  /**
+   * 下一步干什么 —— **每个状态都必须有且只有一个主按钮。**
+   *
+   * ⚠️ 早先这里只有「重新生成」和「删除」两个灰按钮。
+   *    Round 的状态机本来就有 planning → shopping → cooking → done 四档,
+   *    但 UI 从来没驱动过后两档 —— 生成完就卡在 shopping,
+   *    页面上唯一能点的是「重新生成」和「删除」,于是看起来像「做完了?那就删了吧」。
+   *    状态机里有 UI 到不了的状态,等于流程断在最关键的地方。
+   */
+  function nextStep(r) {
+    var box = h('div', { style: 'margin-top:14px' });
+    var s = r.solved;
+
+    function setStatus(st) {
+      var rs = rounds();
+      var k = rs.findIndex(function (x) { return x.id === r.id; });
+      rs[k].status = st;
+      if (st === 'done') rs[k].finishedAt = new Date().toISOString();
+      saveRounds(rs); render();
+    }
+
+    if (r.status === 'shopping') {
+      var left = (s.shopping || []).filter(function (x) { return !x.bought; }).length;
+      box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
+        left ? '在超市边买边勾。买完了点下面开始做饭。'
+             : '都买齐了 —— 可以开做了。',
+      ]));
+      box.appendChild(h('button', {
+        class: 'btn', onclick: function () { setStatus('cooking'); },
+      }, [left ? '买齐了,开始做饭(还有 ' + left + ' 样没勾)' : '开始做饭']));
+    } else if (r.status === 'cooking') {
+      var meals = s.meals || [];
+      var cooked = meals.filter(function (x) { return x.cooked; }).length;
+      box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
+        '做完一道点一下「做了」—— 用掉的食材会自动从冰箱扣掉。' +
+        (cooked ? '  已经做了 ' + cooked + '/' + meals.length + '。' : ''),
+      ]));
+      box.appendChild(h('button', {
+        class: 'btn', onclick: function () {
+          var skipped = meals.length - cooked;
+          Modal.confirm({
+            title: '这一轮就到这儿?',
+            body: cooked === meals.length
+              ? '排的 ' + meals.length + ' 顿全做了。'
+              : '排了 ' + meals.length + ' 顿,做了 ' + cooked + ' 顿,还有 ' + skipped +
+                ' 顿没做。\n\n没做的会如实记下来 —— 连着两轮做不完,下次会自动少排几天。',
+            ok: '结束这一轮',
+          }).then(function (ok) { if (ok) setStatus('done'); });
+        },
+      }, [cooked === meals.length && meals.length ? '全做完了,结束这一轮' : '结束这一轮']));
+    } else if (r.status === 'done') {
+      var done2 = (s.meals || []).filter(function (x) { return x.cooked; }).length;
+      box.appendChild(h('div', { class: 'note' }, [
+        '这一轮结束:排 ' + (s.meals || []).length + ' 顿,做了 ' + done2 + ' 顿。' +
+        '冰箱里剩下的东西下一轮会优先排掉。',
+      ]));
+    }
+    return box;
+  }
+
+  // ---------------- 菜卡 ----------------
+
+  function mealCard(r, m, i) {
+    var cooking = r.status === 'cooking' || r.status === 'done';
+    var card = h('div', { class: 'card', style: 'padding:10px 12px;margin-bottom:6px' +
+                                                (m.cooked ? ';opacity:.55' : '') });
+
+    var head = h('div', { style: 'display:flex;gap:8px;align-items:baseline' });
+    head.appendChild(h('div', { style: 'flex:1' + (m.cooked ? ';text-decoration:line-through' : '') },
+      [(i + 1) + '. ' + m.name + (m.prepLevel !== 'scratch' ? '(' + m.prepLevel + ')' : '')]));
+    card.appendChild(head);
+
+    card.appendChild(h('div', { class: 'hint' }, [
+      m.method + ' · 动手 ' + m.activeMinutes + ' 分' +
+      (m.totalMinutes > m.activeMinutes ? '(总共 ' + m.totalMinutes + ' 分)' : '') +
+      ' · 难度 ' + m.difficulty,
+    ]));
+
+    // ⚠️ 要用什么必须直接列出来。
+    //    只写菜名的话,你得点进去才知道里面有竹笋 —— 而「我不吃竹笋」是
+    //    看一眼就能判断的事。把判断需要的信息藏起来,等于逼人接受推荐。
+    var ings = mealIngredients(m);
+    if (ings.length) {
+      card.appendChild(h('div', {
+        style: 'display:flex;gap:5px;flex-wrap:wrap;margin-top:8px',
+      }, ings.map(function (x) {
+        var strong = x.role === 'main';
+        return h('span', {
+          style: 'font-size:12px;padding:2px 8px;border-radius:999px;' +
+                 'border:1px solid var(--border);' +
+                 (strong ? 'background:var(--accent-dim);color:var(--accent);font-weight:600'
+                         : 'color:var(--text-dim)'),
+        }, [x.name + (x.qty ? ' ' + x.qty + x.unit : (x.toTaste ? ' 适量' : '')) +
+            (x.alt ? ' 或…' : '')]);
+      })));
+    }
+
+    var acts = h('div', { style: 'display:flex;gap:6px;margin-top:10px;flex-wrap:wrap' });
+    if (!cooking) {
+      acts.appendChild(h('button', {
+        class: 'btn ghost', style: 'width:auto;padding:5px 12px;font-size:13px',
+        onclick: function () { swapDish(r, m); },
+      }, ['换掉这道']));
+    } else {
+      acts.appendChild(h('button', {
+        class: 'btn ghost', style: 'width:auto;padding:5px 12px;font-size:13px' +
+               (m.cooked ? '' : ';border-color:var(--accent);color:var(--accent)'),
+        onclick: function () { toggleCooked(r, m.recipeId); },
+      }, [m.cooked ? '↩ 没做' : '做了']));
+    }
+    card.appendChild(acts);
+    return card;
+  }
+
+  /**
+   * 换掉一道菜 —— **必须问为什么**。
+   *
+   * 直接换一道是最省事的做法,但那样系统什么也学不到:下一轮照样给你排竹笋。
+   * 问一句「为什么」,答案就能直接变成忌口或者「别买这瓶」,越用越准。
+   * 这是这个 app 唯一能变聪明的地方 —— 别的信息它都只能靠猜。
+   */
+  function swapDish(r, m) {
+    var missing = mealSeasonings(m).filter(function (x) { return !x.have; });
+    var opts = [
+      { key: 'ing', label: '里面有我不吃的', hint: '选出来,以后都不给你排' },
+    ];
+    if (missing.length) {
+      opts.push({ key: 'seas', label: '不想为它买调料',
+                  hint: '要买 ' + missing.map(function (x) { return x.name; }).join(' · ') });
+    }
+    opts.push({ key: 'dish', label: '就是不想吃这道', hint: '食材没问题,单纯不想吃' });
+    opts.push({ key: 'plain', label: '没什么原因,换一道就行',
+                hint: '不记原因 —— 下一轮可能还会排到' });
+
+    Modal.pick({ title: '换掉「' + m.name + '」', hint: '说一句为什么,以后就不用再换了。',
+                 options: opts }).then(function (why) {
+      if (!why) return;
+      if (why === 'plain') return applySwap(r, m, null, null);
+
+      if (why === 'dish') {
+        return askScope('以后还给你排「' + m.name + '」吗?', {
+          onceLabel: '就这次不做', foreverLabel: '这道菜以后都别排',
+        }).then(function (scope) {
+          if (!scope) return;
+          applySwap(r, m, null, scope === 'forever' ? { recipe: m.recipeId } : null);
+        });
+      }
+
+      var pool = why === 'ing'
+        ? mealIngredients(m).map(function (x) { return { key: x.id, label: x.name,
+            hint: x.role === 'main' ? '主料' : (x.role === 'staple' ? '主食' : '配料') }; })
+        : missing.map(function (x) { return { key: x.id, label: x.name, hint: '这瓶要另买' }; });
+
+      Modal.pick({
+        title: why === 'ing' ? '哪样不吃?' : '哪瓶不想买?',
+        hint: why === 'ing'
+          ? '拉黑之后,所有用到它的菜都不会再排 —— 「或」组里还有别的选择的不受影响。'
+          : '拉黑之后,非它不可的菜就不排了。',
+        options: pool,
+      }).then(function (id) {
+        if (!id) return;
+        var name = pool.filter(function (p) { return p.key === id; })[0].label;
+        askScope('以后都不吃「' + name + '」吗?', {
+          onceLabel: '只是这次不想要', foreverLabel: '以后都别给我排',
+        }).then(function (scope) {
+          if (!scope) return;
+          applySwap(r, m, { id: id, scope: scope }, null);
+        });
+      });
+    });
+  }
+
+  function askScope(title, o) {
+    return Modal.pick({
+      title: title,
+      options: [
+        { key: 'forever', label: o.foreverLabel, hint: '写进忌口,设置里能改回来' },
+        { key: 'once', label: o.onceLabel, hint: '只影响这一轮' },
+      ],
+    });
+  }
+
+  /**
+   * @param ban   {id, scope} 要拉黑的食材/调料
+   * @param dish  {recipe} 永久不排这道菜
+   * 落库之后立刻重新生成 —— 换掉了却还得自己去点「重新生成」,那不叫换掉。
+   */
+  function applySwap(r, m, ban, dish) {
+    resolveRound(r.id, function () {
+      var rs = rounds();
+      var k = rs.findIndex(function (x) { return x.id === r.id; });
+      var ov = rs[k].overrides = rs[k].overrides || {};
+
+      // 换掉的这道,本轮一定不再排
+      ov.excludeRecipeIds = (ov.excludeRecipeIds || []).concat([m.recipeId]);
+      saveRounds(rs);
+
+      if (ban && ban.scope === 'once') {
+        var rs2 = rounds();
+        var k2 = rs2.findIndex(function (x) { return x.id === r.id; });
+        rs2[k2].overrides.blacklistAdd =
+          (rs2[k2].overrides.blacklistAdd || []).concat([ban.id]);
+        saveRounds(rs2);
+      } else if (ban) {
+        saveConfig({
+          blacklist: Catalog.expandBlacklist((config().blacklist || []).concat([ban.id])),
+        });
+      }
+      if (dish && dish.recipe) {
+        var cur = config().excludeRecipeIds || [];
+        if (cur.indexOf(dish.recipe) < 0) {
+          saveConfig({ excludeRecipeIds: cur.concat([dish.recipe]) });
+        }
+      }
+    });
+  }
+
+  function toggleCooked(r, recipeId) {
+    var rs = rounds();
+    var k = rs.findIndex(function (x) { return x.id === r.id; });
+    var m = rs[k].solved.meals.filter(function (x) { return x.recipeId === recipeId; })[0];
+    if (!m) return;
+    m.cooked = !m.cooked;
+    m.cookedAt = m.cooked ? new Date().toISOString() : null;
+    saveRounds(rs);
+    // 做了就从库存里扣 —— 这是库存模块存在的理由,不扣的话下一轮会重复买
+    if (m.cooked) {
+      var now = new Date().toISOString();
+      mealIngredients(m).forEach(function (x) {
+        if (x.qty) Pantry.consume(x.id, x.qty, now);
+      });
+    }
+    render();
   }
 
   // ---------------- 列表 ----------------
@@ -575,21 +887,34 @@ var RoundsUI = (function () {
     }
     if (r.solved) box.appendChild(resultView(r));
 
-    box.appendChild(h('button', {
-      class: 'btn ghost', style: 'margin-top:10px;padding:7px;font-size:13px',
-      onclick: function () {
-        Modal.confirm({
-          title: '删掉这一轮记录?',
-          body: '这一轮的菜、采购清单和实际买入记录都会没掉。' +
-                '已经进冰箱的东西不受影响。',
-          ok: '删掉', danger: true,
-        }).then(function (ok) {
-          if (!ok) return;
-          var rs = rounds().filter(function (x) { return x.id !== r.id; });
-          saveRounds(rs); render();
-        });
-      },
-    }, ['删除']));
+    // 次要操作压成一行小字 —— 以前「删除」和主流程一样醒目,
+    // 生成完只看见「重新生成 / 删除」,像是在说「做完了?那就删了吧」。
+    var foot = h('div', { style: 'display:flex;gap:14px;margin-top:12px;justify-content:center' });
+    function link(label, fn, danger) {
+      return h('button', {
+        style: 'background:none;border:0;font:inherit;font-size:12px;cursor:pointer;' +
+               'text-decoration:underline;color:var(--' + (danger ? 'danger' : 'text-dim') + ')',
+        onclick: fn,
+      }, [label]);
+    }
+    if (r.solved && r.status !== 'done') {
+      foot.appendChild(link('重新生成', function () {
+        resolveRound(r.id, function () {});
+      }));
+    }
+    foot.appendChild(link('删除这一轮', function () {
+      Modal.confirm({
+        title: '删掉这一轮记录?',
+        body: '这一轮的菜、采购清单和实际买入记录都会没掉。' +
+              '已经进冰箱的东西不受影响。',
+        ok: '删掉', danger: true,
+      }).then(function (ok) {
+        if (!ok) return;
+        var rs = rounds().filter(function (x) { return x.id !== r.id; });
+        saveRounds(rs); render();
+      });
+    }, true));
+    box.appendChild(foot);
     return box;
   }
 
