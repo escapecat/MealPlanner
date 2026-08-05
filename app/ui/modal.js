@@ -22,7 +22,7 @@ var Modal = (function () {
     });
     (kids || []).forEach(function (c) {
       if (c == null) return;
-      n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+      n.appendChild(typeof c === 'string' ? Dom.text(c) : c);
     });
     return n;
   }

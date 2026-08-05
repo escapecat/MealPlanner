@@ -96,5 +96,29 @@ ok(res.shortfall === 0, '够用时 shortfall 为 0');
 var res2 = Pantry.consume('chicken_breast', 999, new Date(0).toISOString());
 ok(res2.shortfall > 0, '不够用时如实报缺口,不静默补零');
 
+// --- 6. 排期:最容易坏的排前面 ---
+//     这条没测的话失败也是静默的:顺序看起来「有」,只是排错了,
+//     而后果要到第四天打开冰箱才发现。
+global.Schedule = require(path.join(A, 'core', 'schedule.js'));
+
+var meals = r1.stage2.chosen.map(function (c) {
+  return { recipeId: c.recipe.id, prepLevel: c.variant.prepLevel, name: c.recipe.name };
+});
+var plan = Schedule.assign(meals, 2, 2);
+ok(plan.length === meals.length, '排期不丢菜');
+var seq = plan.map(function (p) { return p.shelfLifeDays == null ? 9999 : p.shelfLifeDays; });
+var sorted = seq.every(function (v, i) { return i === 0 || seq[i - 1] <= v; });
+ok(sorted, '保质期短的排在前面(' +
+   plan.map(function (p) {
+     return p.meal.name + '=' + (p.shelfLifeDays == null ? '不怕放' : p.shelfLifeDays + '天');
+   }).join(' · ') + ')');
+ok(plan[0].day === 1 && plan[plan.length - 1].day === 2, '2 天 × 2 顿铺满两天');
+
+// 不改传进来的数组 —— 排期是派生数据,存下来就会变成对不上的旧账
+var before = meals.map(function (m) { return m.recipeId; }).join();
+Schedule.assign(meals, 2, 2);
+ok(meals.map(function (m) { return m.recipeId; }).join() === before,
+   'assign 不改传进来的 meals');
+
 console.log(fails ? '\n' + fails + ' 条挂了' : '\n全过');
 process.exit(fails ? 1 : 0);

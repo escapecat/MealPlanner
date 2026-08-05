@@ -19,7 +19,7 @@ var SettingsUI = (function () {
       else if (attrs[k] != null) n.setAttribute(k, attrs[k]);
     });
     (kids || []).forEach(function (c) {
-      n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+      n.appendChild(typeof c === 'string' ? Dom.text(c) : c);
     });
     return n;
   }

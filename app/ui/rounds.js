@@ -15,7 +15,7 @@ var RoundsUI = (function () {
       else if (attrs[k] != null) n.setAttribute(k, attrs[k]);
     });
     (kids || []).forEach(function (c) {
-      n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+      n.appendChild(typeof c === 'string' ? Dom.text(c) : c);
     });
     return n;
   }
@@ -617,9 +617,28 @@ var RoundsUI = (function () {
       });
     }
 
+    // ⚠️ 按**该吃的顺序**分天,不是求解器挑中的顺序。
+    //    早先这里就是数组下标 1/2/3/4 —— 你可能第 4 天才吃那条冷藏 1 天的鱼。
+    //    排期不写回存储:它能从保质期算出来,存下来就会变成对不上的旧账。
+    var plan = Schedule.assign(s.meals, r.input.days, r.input.perDay);
+
     box.appendChild(h('div', { style: 'font-weight:600;margin:14px 0 6px' }, ['做这些']));
-    s.meals.forEach(function (m, i) {
-      box.appendChild(mealCard(r, m, i));
+    Schedule.warnings(plan).forEach(function (t) {
+      box.appendChild(h('div', { class: 'note warn', style: 'margin-bottom:8px' }, [t]));
+    });
+    box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
+      '顺序按**最容易坏的先吃**排的,不是随便排的。时间是估的,没测过。',
+    ]));
+
+    var lastDay = null;
+    plan.forEach(function (p, i) {
+      if (p.day !== lastDay) {
+        box.appendChild(h('div', {
+          style: 'font-size:13px;color:var(--text-dim);margin:10px 0 4px',
+        }, ['第 ' + p.day + ' 天']));
+        lastDay = p.day;
+      }
+      box.appendChild(mealCard(r, p.meal, i, p));
     });
 
     box.appendChild(nextStep(r));
@@ -688,8 +707,9 @@ var RoundsUI = (function () {
 
   // ---------------- 菜卡 ----------------
 
-  function mealCard(r, m, i) {
+  function mealCard(r, m, i, sched) {
     var cooking = r.status === 'cooking' || r.status === 'done';
+    var rv = variantOf(m);
     var card = h('div', { class: 'card', style: 'padding:10px 12px;margin-bottom:6px' +
                                                 (m.cooked ? ';opacity:.55' : '') });
 
@@ -698,15 +718,23 @@ var RoundsUI = (function () {
       [(i + 1) + '. ' + m.name + (m.prepLevel !== 'scratch' ? '(' + m.prepLevel + ')' : '')]));
     card.appendChild(head);
 
+    // ⚠️ 时间标「估」。全库 512 道菜 verified 全是 false —— 这两个数字是建库时
+    //    一条条估出来的,没测过也没出处。相对大小大概对(炒蛋比手抓饭快),
+    //    绝对值别当真。不标的话它看起来就像测量值,和包装规格是同一类错误。
     card.appendChild(h('div', { class: 'hint' }, [
       m.method + ' · 动手 ' + m.activeMinutes + ' 分' +
       (m.totalMinutes > m.activeMinutes ? '(总共 ' + m.totalMinutes + ' 分)' : '') +
-      ' · 难度 ' + m.difficulty,
+      ' 估 · 难度 ' + m.difficulty,
     ]));
 
-    // ⚠️ 要用什么必须直接列出来。
-    //    只写菜名的话,你得点进去才知道里面有竹笋 —— 而「我不吃竹笋」是
-    //    看一眼就能判断的事。把判断需要的信息藏起来,等于逼人接受推荐。
+    // 提前准备必须显眼 —— 「米泡20分钟」你要是开火前才看到就已经晚了。
+    // 这一条数据早就在库里,只是一直没进 UI。
+    var ahead = rv && rv.variant.aheadOfTime;
+    if (ahead && ahead !== '—') {
+      card.appendChild(h('div', { class: 'note warn', style: 'margin-top:8px' },
+        ['提前:' + ahead]));
+    }
+
     var ings = mealIngredients(m);
     if (ings.length) {
       card.appendChild(h('div', {
@@ -723,7 +751,45 @@ var RoundsUI = (function () {
       })));
     }
 
+    var note = (rv && rv.variant.note) || (rv && rv.recipe.note);
+    if (note && note !== '—') {
+      card.appendChild(h('div', { class: 'hint', style: 'margin-top:8px' }, ['· ' + note]));
+    }
+
+    // ⚠️ 调料也得列。早先卡片上只有一句「缺 3 样调料」——
+    //    缺哪三样?要不要买?没说。而「不想为这道菜买一瓶鱼露」正是
+    //    换掉一道菜最常见的理由,判断依据不能只给个数字。
+    //    缺的标红,有的压暗 —— 一眼看出这道菜要不要额外花钱。
+    var seas = mealSeasonings(m);
+    if (seas.length) {
+      var lack = seas.filter(function (x) { return !x.have; }).length;
+      card.appendChild(h('div', { class: 'hint', style: 'margin-top:8px' }, [
+        lack ? '调料 · 要买 ' + lack + ' 样' : '调料 · 都有',
+      ]));
+      card.appendChild(h('div', {
+        style: 'display:flex;gap:5px;flex-wrap:wrap;margin-top:4px',
+      }, seas.map(function (x) {
+        return h('span', {
+          style: 'font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid ' +
+                 (x.have ? 'var(--border);color:var(--text-dim)'
+                         : 'var(--warn);color:var(--warn);background:var(--warn-dim)'),
+        }, [x.name + (x.have ? '' : ' 要买')]);
+      })));
+    }
+
     var acts = h('div', { style: 'display:flex;gap:6px;margin-top:10px;flex-wrap:wrap' });
+
+    // ⚠️ 库里**没有做法步骤**,只有上面那一行备注。
+    //    DESIGN 的定位是「食材流转管理器,不是菜谱推荐器」,不自己写 512 道菜的步骤
+    //    是对的 —— 我写也是编的。但不写不等于不给出口,以前连出口都没有。
+    acts.appendChild(h('a', {
+      class: 'btn ghost',
+      style: 'width:auto;padding:5px 12px;font-size:13px;text-decoration:none;' +
+             'display:inline-block;text-align:center',
+      href: 'https://www.xiachufang.com/search/?keyword=' + encodeURIComponent(m.name),
+      target: '_blank', rel: 'noopener',
+    }, ['搜做法 ↗']));
+
     if (!cooking) {
       acts.appendChild(h('button', {
         class: 'btn ghost', style: 'width:auto;padding:5px 12px;font-size:13px',
@@ -737,6 +803,12 @@ var RoundsUI = (function () {
       }, [m.cooked ? '↩ 没做' : '做了']));
     }
     card.appendChild(acts);
+
+    if (sched && sched.driver) {
+      card.appendChild(h('div', {
+        class: 'hint', style: sched.urgent ? 'color:var(--danger)' : '',
+      }, [sched.reason]));
+    }
     return card;
   }
 

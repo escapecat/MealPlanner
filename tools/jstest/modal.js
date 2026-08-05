@@ -45,11 +45,24 @@ var body = new El('body');
 global.document = {
   createElement: function (t) { return new El(t); },
   createTextNode: function (t) { var n = new El('#text'); n.text = t; n.textContent = t; return n; },
+  createDocumentFragment: function () { return new El('#frag'); },
   body: body,
   addEventListener: function () {}, removeEventListener: function () {},
 };
 
+global.Dom = require(path.join(__dirname, '..', '..', 'app', 'ui', 'dom.js'));
 var Modal = require(path.join(__dirname, '..', '..', 'app', 'ui', 'modal.js'));
+
+// Dom.text 现在挡在所有文案前面 —— 顺手确认它没把字吞掉
+(function () {
+  function flat(n) { return n.text || n.all().map(function (c) { return c.text || ''; }).join(''); }
+  var plain = Dom.text('买齐了,开始做饭');
+  var bold = Dom.text('还有 **3 样** 没勾');
+  var lone = Dom.text('规格 5*5cm');
+  console.log('  ok   Dom.text 纯文本原样:' + (flat(plain) === '买齐了,开始做饭'));
+  console.log('  ok   Dom.text 粗体不吞字:' + (flat(bold) === '还有 3 样 没勾'));
+  console.log('  ok   Dom.text 落单星号不误伤:' + (flat(lone) === '规格 5*5cm'));
+})();
 
 var fails = 0, pending = [];
 function ok(cond, msg) {
