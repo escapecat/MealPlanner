@@ -104,14 +104,27 @@ var PantryUI = (function () {
       if (!isNaN(n)) { setAmount(it.id, n); render(); }
     }));
     row.appendChild(act('吃完了', function () { removeItem(it.id); render(); }));
+
+    // ⚠️ 「扔了」写进 wasteLog,那是诊断统计唯一的真实数据源。
+    //    所以必须另给一个「记错了」—— 否则用户拿「扔了」当通用删除键,
+    //    系统就会以为他真扔了食物,「什么东西总是剩」的结论跟着变成垃圾。
     row.appendChild(act('扔了', function () {
-      if (!confirm('记一笔浪费:' + (ing ? ing.name : '') + ' ' +
-                   Math.round(it.amount) + (it.unit || 'g') + '?\n' +
-                   '记下来才能看出「什么东西总是剩」。')) return;
-      logWaste(it, it.amount);
-      removeItem(it.id);
+      var def = Math.round(it.amount);
+      var v = prompt('扔了多少 ' + (it.unit || 'g') + '?(只扔了一部分就改小)\n' +
+                     '记下来才能看出什么东西总是剩。', def);
+      if (v == null) return;
+      var n = parseFloat(v);
+      if (isNaN(n) || n <= 0) return;
+      logWaste(it, Math.min(n, it.amount));
+      if (n >= it.amount) removeItem(it.id);
+      else setAmount(it.id, it.amount - n);
       render();
     }, true));
+    row.appendChild(act('记错了', function () {
+      if (!confirm('直接删掉这条,不算浪费也不算吃掉?')) return;
+      removeItem(it.id);
+      render();
+    }));
     box.appendChild(row);
     return box;
   }
@@ -340,7 +353,8 @@ var PantryUI = (function () {
       ing.name,
       '1 = 改买入日期',
       entry.openedAt ? '2 = 改开封日期' : '2 = 标记为已开封',
-      '3 = 用完了 / 从柜子里删掉',
+      '3 = 用完了(正常吃完)',
+      '4 = 记错了 / 其实没有(直接删掉)',
       '',
       '输入数字:',
     ];
@@ -358,7 +372,10 @@ var PantryUI = (function () {
                                      : new Date().toISOString().slice(0, 10));
       if (d2 === null) return;
       Pantry.setOpened(ing.id, d2 ? new Date(d2).toISOString() : null);
-    } else if (pick === '3') {
+    } else if (pick === '3' || pick === '4') {
+      // 调料是二元的(有/没有),两种情况都是从柜子里去掉。
+      // 但分开问是有意义的:以后要统计「多久用完一瓶」时,得分得清
+      // 「用完了」和「压根没有过」。
       Pantry.toggleStaple(ing.id);
     } else return;
     render();
