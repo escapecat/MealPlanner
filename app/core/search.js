@@ -64,7 +64,13 @@ var Search = (function () {
 
   function matches(ing, q) {
     var hay = (ing.name || '') + ' ' + ing.id + ' ' + (ing.aliases || []).join(' ');
-    return hay.toLowerCase().indexOf(q.toLowerCase()) >= 0;
+    if (hay.toLowerCase().indexOf(q.toLowerCase()) >= 0) return true;
+    // 拼音:没人愿意为了搜「豆瓣酱」去切输入法,尤其在超市里单手操作
+    if (typeof Pinyin !== 'undefined' && Pinyin.looksPinyin(q)) {
+      if (Pinyin.match(ing.name || '', q)) return true;
+      return (ing.aliases || []).some(function (a) { return Pinyin.match(a, q); });
+    }
+    return false;
   }
 
   /**

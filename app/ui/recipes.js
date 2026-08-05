@@ -11,7 +11,8 @@
 
 var RecipesUI = (function () {
 
-  var el, q = '', groupBy = 'file', openG = {}, openD = {}, onlyDoable = false;
+  var el, q = '', groupBy = 'file', openG = {}, openD = {}, onlyDoable = false,
+      composing = false;      // 中文输入法正在组字 —— 这期间不能重渲染
 
   function h(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -173,14 +174,19 @@ var RecipesUI = (function () {
   /** ⚠️ 「收录了没有」必须给明确答案。搜不到就说没有,不要静悄悄返回空列表。 */
   function renderSearch(w) {
     var ql = q.toLowerCase();
-    var byName = dishes().filter(function (r) {
-      return r.name.toLowerCase().indexOf(ql) >= 0;
-    });
+    var isPy = Pinyin.looksPinyin(q);
+
+    function hitName(r) {
+      return r.name.toLowerCase().indexOf(ql) >= 0 || (isPy && Pinyin.match(r.name, ql));
+    }
+    var byName = dishes().filter(hitName);
     var byIng = dishes().filter(function (r) {
       if (byName.indexOf(r) >= 0) return false;
       return (r.variants || []).some(function (v) {
         return (v.ingredients || []).some(function (it) {
-          return it.names.some(function (n) { return n.toLowerCase().indexOf(ql) >= 0; });
+          return it.names.some(function (n) {
+            return n.toLowerCase().indexOf(ql) >= 0 || (isPy && Pinyin.match(n, ql));
+          });
         });
       });
     });
@@ -245,11 +251,24 @@ var RecipesUI = (function () {
       '时间和难度都是估的,没核实过。',
     ]));
 
+    // ⚠️ 中文输入法必须挡住组字期间的重渲染。
+    //    IME 打字时先进「组字」状态(拼音还没上屏),这期间每敲一个字母都触发
+    //    oninput → 整页重建 → **输入框被销毁,组字会话跟着被杀**。
+    //    表现是:英文能打,中文一个字都打不进去。
+    //    keepFocus 救不了这个 —— 焦点回来了,但组字状态已经没了。
     w.appendChild(h('div', { class: 'row' }, [
       h('input', {
         id: 'rec-q', type: 'text', value: q,
-        placeholder: '搜菜名或食材…… 例:红烧肉 / 竹笋',
-        oninput: function (e) { q = e.target.value.trim(); render(); },
+        placeholder: '搜菜名或食材…… 红烧肉 / hongshaorou / hsr',
+        oncompositionstart: function () { composing = true; },
+        oncompositionend: function (e) {
+          composing = false;
+          q = e.target.value.trim(); render();
+        },
+        oninput: function (e) {
+          if (composing) return;            // 组字中,等 compositionend 再说
+          q = e.target.value.trim(); render();
+        },
       }),
     ]));
 

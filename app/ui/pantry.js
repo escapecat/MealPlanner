@@ -12,7 +12,7 @@
 var PantryUI = (function () {
 
   var el, tab = 'fridge', q = '', adding = false, addDraft = null,
-      ingQ = '';
+      ingQ = '', composing = false;   // composing:中文输入法正在组字,这期间不能重渲染
 
   function h(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -517,7 +517,16 @@ var PantryUI = (function () {
       h('input', {
         id: 'staple-q',                       // 稳定 id —— keepFocus 靠它把焦点找回来
         type: 'text', placeholder: '买了新调料?搜一下加进来', value: q,
-        oninput: function (e) { q = e.target.value.trim(); render(); },
+        // ⚠️ 中文输入法组字期间不能重渲染 —— 输入框一被重建,组字会话就没了,
+        //    表现是「英文能打,中文一个字都打不进去」。keepFocus 救不了这个。
+        oncompositionstart: function () { composing = true; },
+        oncompositionend: function (e) {
+          composing = false; q = e.target.value.trim(); render();
+        },
+        oninput: function (e) {
+          if (composing) return;
+          q = e.target.value.trim(); render();
+        },
       }),
     ]));
 
