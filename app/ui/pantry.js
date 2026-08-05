@@ -242,17 +242,36 @@ var PantryUI = (function () {
     if (!host) return;
     host.innerHTML = '';
     if (!ingQ) return;
-    var hits = INGREDIENTS.filter(function (i) {
-      if (i.tier === 'staple') return false;        // 调料走调料柜
-      var hay = i.name + ' ' + i.id + ' ' + (i.aliases || []).join(' ');
-      return hay.toLowerCase().indexOf(ingQ.toLowerCase()) >= 0;
-    }).slice(0, 8);
-    host.appendChild(h('div', { class: 'chips' }, hits.map(function (i) {
+
+    // 用 Search 而不是自己 filter + slice(0,8) ——
+    // 那样是按字典文件的书写顺序取前 8 个,搜「鸡」时鸡蛋排第 9 被切掉了。
+    var r = Search.find(ingQ, Search.FRESH, 12);
+
+    if (!r.total) {
+      host.appendChild(h('div', { class: 'hint' }, ['冰箱这边没有「' + ingQ + '」']));
+      var other = Search.find(ingQ, Search.STAPLE, 4);
+      if (other.total) {
+        host.appendChild(h('div', { class: 'note' }, [
+          '不过调料柜里有 ' + other.total + ' 个匹配(' +
+          other.hits.map(function (i) { return i.name; }).join(' · ') +
+          ')—— 这一栏只管生鲜,调料在「调料柜」那边。',
+        ]));
+      }
+      return;
+    }
+
+    host.appendChild(h('div', { class: 'chips' }, r.hits.map(function (i) {
+      // 命中的是别名就标出来,否则「搜豆出来西洋菜」看着像坏了
+      var al = Search.matchedAlias(i, ingQ);
       return h('button', {
         type: 'button', 'aria-pressed': String(addDraft.ingredientId === i.id),
         onclick: function () { addDraft.ingredientId = i.id; render(); },
-      }, [i.name]);
+      }, [i.name + (al ? '(' + al + ')' : '')]);
     })));
+    if (r.total > r.hits.length) {
+      host.appendChild(h('div', { class: 'hint', style: 'margin-top:4px' },
+        ['还有 ' + (r.total - r.hits.length) + ' 个,搜得再具体点']));
+    }
   }
 
   // ---------------- 调料柜 ----------------
@@ -357,8 +376,9 @@ var PantryUI = (function () {
       style: 'border:0;background:none;font-size:18px;cursor:pointer;padding:0;flex:0 0 auto',
       onclick: function () { Pantry.toggleStaple(ing.id); render(); },
     }, [has ? '☑' : '☐']));
+    var al = q ? Search.matchedAlias(ing, q) : null;
     row.appendChild(h('div', { style: 'flex:1' + (has ? '' : ';color:var(--text-dim)') }, [
-      h('div', {}, [ing.name]),
+      h('div', {}, [ing.name + (al ? '(' + al + ')' : '')]),
       h('div', { class: 'hint' }, [
         (ing.packaging || '规格未填') + (ing.inevitableSurplus ? ' · 单人多半吃不完' : ''),
       ]),
@@ -400,15 +420,25 @@ var PantryUI = (function () {
 
     var filtered = pool;
     if (q) {
-      filtered = pool.filter(function (i) {
-        var hay = i.name + ' ' + i.id + ' ' + (i.aliases || []).join(' ');
-        return hay.toLowerCase().indexOf(q.toLowerCase()) >= 0;
-      });
+      var sr = Search.find(q, Search.STAPLE, 200);
+      filtered = sr.hits;
       if (!filtered.length) {
         w.appendChild(h('div', { class: 'empty' }, [
           h('div', { class: 'big' }, ['🔍']),
-          h('div', {}, ['没找到「' + q + '」']),
+          h('div', {}, ['调料柜里没有「' + q + '」']),
         ]));
+        var other2 = Search.find(q, Search.FRESH, 4);
+        if (other2.total) {
+          w.appendChild(h('div', { class: 'note' }, [
+            '冰箱那边有 ' + other2.total + ' 个匹配(' +
+            other2.hits.map(function (i) { return i.name; }).join(' · ') +
+            ')—— 这一栏只管调料米面油。',
+          ]));
+          w.appendChild(h('button', {
+            class: 'btn ghost',
+            onclick: function () { tab = 'fridge'; q = ''; render(); },
+          }, ['去冰箱那边']));
+        }
         return;
       }
     }
