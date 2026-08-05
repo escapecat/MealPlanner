@@ -9,7 +9,7 @@
 
 var SettingsUI = (function () {
 
-  var el, section = null, onNav = null;
+  var el, section = null, onNav = null, blQ = '';
 
   function h(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -143,6 +143,101 @@ var SettingsUI = (function () {
     return box;
   }
 
+  /**
+   * 忌口编辑器 —— 可搜、可加任何食材、可减。
+   *
+   * ⚠️ 早先只给了 10 个硬编码的常见项(香菜/苦瓜/秋葵…)。
+   *    不吃羊肉、对某样过敏、讨厌某种鱼 —— 全都没地方填。
+   *    给一份罐头清单,等于替用户决定了他能表达什么。
+   *
+   * 每一项都显示代价(少多少道菜可做),因为忌口是真会缩小可选范围的,
+   * 勾之前该知道。
+   */
+  function blacklistEditor(cfg) {
+    var list = (cfg.blacklist || []).slice();
+    var box = h('div', { class: 'row' });
+    box.appendChild(h('label', { class: 'lab' }, ['不吃的']));
+
+    function save(next) { saveConfig({ blacklist: next }); }
+
+    function costOf(id) {
+      var withOut = Catalog.countAvailable({
+        equipment: cfg.equipment, maxSpicy: cfg.maxSpicy,
+        maxActiveMinutes: cfg.maxActiveMinutes,
+        blacklist: Catalog.expandBlacklist(list.concat(list.indexOf(id) >= 0 ? [] : [id])),
+      }).dishes;
+      var withIt = Catalog.countAvailable({
+        equipment: cfg.equipment, maxSpicy: cfg.maxSpicy,
+        maxActiveMinutes: cfg.maxActiveMinutes,
+        blacklist: Catalog.expandBlacklist(list.filter(function (x) { return x !== id; })),
+      }).dishes;
+      return withIt - withOut;
+    }
+
+    // 已经拉黑的:点 × 去掉
+    if (list.length) {
+      box.appendChild(h('div', { class: 'chips', style: 'margin-bottom:8px' },
+        list.map(function (id) {
+          var name = id.indexOf('@category:') === 0
+            ? id.slice(10) + '(整类)'
+            : ((Catalog.ingredient(id) || {}).name || id);
+          return h('button', {
+            type: 'button', 'aria-pressed': 'true',
+            onclick: function () {
+              save(list.filter(function (x) { return x !== id; }));
+            },
+          }, [name + ' ×']);
+        })));
+    } else {
+      box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, ['还没设过']));
+    }
+
+    // 搜任何食材加进去
+    box.appendChild(h('input', {
+      type: 'text', placeholder: '搜食材加进来…… 羊肉 / 香菜 / 内脏', value: blQ,
+      oninput: function (e) { blQ = e.target.value.trim(); renderBlHits(cfg); },
+    }));
+    box.appendChild(h('div', { id: 'blhits', style: 'margin-top:6px' }));
+
+    // 常见的几个快选(已经在列表里的不再显示)
+    var quick = Catalog.commonDislikes().filter(function (d) { return list.indexOf(d.id) < 0; });
+    if (quick.length && !blQ) {
+      box.appendChild(h('div', { class: 'hint', style: 'margin-top:8px' }, ['常见的:']));
+      box.appendChild(h('div', { class: 'chips' }, quick.map(function (d) {
+        return h('button', {
+          type: 'button',
+          onclick: function () { save(list.concat([d.id])); },
+        }, ['+ ' + d.name]);
+      })));
+    }
+    return box;
+  }
+
+  function renderBlHits(cfg) {
+    var host = el.querySelector('#blhits');
+    if (!host) return;
+    host.innerHTML = '';
+    if (!blQ) return;
+    var list = (cfg.blacklist || []);
+    var r = Search.find(blQ, null, 10);
+    if (!r.total) {
+      host.appendChild(h('div', { class: 'hint' }, ['没找到「' + blQ + '」']));
+      return;
+    }
+    host.appendChild(h('div', { class: 'chips' }, r.hits.map(function (i) {
+      var on = list.indexOf(i.id) >= 0;
+      var al = Search.matchedAlias(i, blQ);
+      return h('button', {
+        type: 'button', 'aria-pressed': String(on),
+        onclick: function () {
+          var next = on ? list.filter(function (x) { return x !== i.id; })
+                        : list.concat([i.id]);
+          saveConfig({ blacklist: next });
+        },
+      }, [(on ? '✓ ' : '+ ') + i.name + (al ? '(' + al + ')' : '')]);
+    })));
+  }
+
   function kitchenSection() {
     var cfg = config();
     var box = h('div', { class: 'card' });
@@ -187,15 +282,7 @@ var SettingsUI = (function () {
           [{ v: 20, t: '20 分' }, { v: 30, t: '30 分' }, { v: 45, t: '45 分' }, { v: 999, t: '不限' }]),
       '算的是活跃时间 —— 焖煮的那段不占你的时间。单次想临时改,在新建记录时改就行'));
 
-    box.appendChild(row('不吃的',
-      chips(Catalog.commonDislikes().map(function (d) { return { id: d.id, label: d.name }; }),
-            function (it) { return (cfg.blacklist || []).indexOf(it.id) >= 0; },
-            function (it) {
-              var list = (cfg.blacklist || []).slice();
-              var i = list.indexOf(it.id);
-              if (i >= 0) list.splice(i, 1); else list.push(it.id);
-              saveConfig({ blacklist: list });
-            })));
+    box.appendChild(blacklistEditor(cfg));
 
     box.appendChild(h('div', { class: c.dishes < c.total * 0.25 ? 'note warn' : 'note' }, [
       '当前配置可做 ' + c.dishes + ' 道菜(共 ' + c.total + ' 道)· ' + c.variants + ' 个做法档位',
@@ -205,6 +292,17 @@ var SettingsUI = (function () {
 
   function dataSection() {
     var box = h('div', { class: 'card' });
+    // 规格校准数只是个统计,不是功能入口 —— 所以放这儿一行,
+    // 不再单开一个分区让人点进去发现「不用管这个」。
+    var nCal = Object.keys(Store.get('packageOverrides', {}) || {}).length +
+               (Store.get('userPackages', []) || []).length;
+    var nWaste = (Store.get('wasteLog', []) || []).length;
+    box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:10px' }, [
+      '记录 ' + (Store.get('rounds', []) || []).length + ' 轮 · ' +
+      '冰箱 ' + Pantry.items().length + ' 项 · ' +
+      '调料 ' + ((Pantry.staples() || []).length) + ' 样 · ' +
+      '浪费记了 ' + nWaste + ' 笔 · 规格校准过 ' + nCal + ' 条',
+    ]));
     box.appendChild(h('button', {
       class: 'btn ghost', style: 'margin-bottom:8px',
       onclick: function () {
@@ -231,29 +329,9 @@ var SettingsUI = (function () {
 
   // ---------------- 页面 ----------------
 
-  /** 不再是一个可浏览的页面 —— 只报个状态。
-   *  改规格的自然时机是「你站在货架前发现这包不是 300g」,那个时刻在采购清单上,
-   *  不在这里。让人提前来翻 135 条,是让他做没有意义的作业。 */
-  function specSection() {
-    var ov = Store.get('packageOverrides', {}) || {};
-    var mine = Store.get('userPackages', []) || [];
-    var n = Object.keys(ov).length + mine.length;
-    var box = h('div', { class: 'card' });
-    box.appendChild(h('div', {}, [
-      n ? '你校准过 ' + n + ' 条规格' : '还没校准过任何规格',
-    ]));
-    box.appendChild(h('div', { class: 'hint', style: 'margin-top:6px' }, [
-      '**不用专门来管这个。** 采购清单上每样后面有个「规格不对?」,' +
-      '你在超市看到实际克数顺手点一下就行。不改也不影响记账 —— ' +
-      '采购量按菜谱需求给,剩多少按你填的实际克数算。',
-    ]));
-    return box;
-  }
-
   var SECTIONS = [
     { id: 'body',    title: '身体数据与目标', render: bodySection },
     { id: 'kitchen', title: '厨房与口味',     render: kitchenSection },
-    { id: 'spec',    title: '规格校准',        render: specSection },
     { id: 'data',    title: '数据',           render: dataSection },
   ];
 
@@ -276,6 +354,7 @@ var SettingsUI = (function () {
       '厨具不消耗,归这里;调料会慢慢用完、要提醒补货,归库存。',
     ]));
     el.appendChild(w);
+    if (section === 'kitchen' && blQ) renderBlHits(config());
   }
 
   function mount(node, opts) { el = node; onNav = (opts || {}).onOpenPkg; render(); }
