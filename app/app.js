@@ -8,6 +8,7 @@
   // 不该跟「记录/库存」平级占一个主 tab。
   var TABS = [
     { id: 'plan',    icon: '🍚', label: '记录' },
+    { id: 'recipes', icon: '📖', label: '菜谱' },
     { id: 'pantry',  icon: '🧊', label: '库存' },
     { id: 'me',      icon: '⚙️', label: '我的' },
   ];
@@ -76,6 +77,8 @@
       SettingsUI.mount(page);
     } else if (current === 'pantry') {
       PantryUI.mount(page);
+    } else if (current === 'recipes') {
+      RecipesUI.mount(page);
     } else {
       RoundsUI.mount(page);
     }

@@ -182,9 +182,20 @@ var RoundsUI = (function () {
     var nowIso = new Date().toISOString();
     var mustUse = Pantry.expiringSoon(3, nowIso).map(function (it) { return it.ingredientId; });
 
+    // ⚠️ 这个 target 以前**从来没传过**。
+    //    solver 里那条 `- short * 120` 的营养项(注释还写着「模拟 400 个场景发现
+    //    热量达标率 15%」)因为拿不到 target,一直恒等于 0 —— 写了但没接上。
+    //    结果就是排出「晚饭 = 400g 青菜 + 一碗饭,442 kcal」这种方案。
+    var p = Store.get('profile', {}) || {};
+    var wlog = Store.get('weightLog', []) || [];
+    var kg = wlog.length ? wlog[wlog.length - 1].kg : null;
+    var daily = Profile.dailyTargets(Object.assign({}, p, { weightKg: kg }));
+    var target = daily ? Profile.perPlannedMeal(daily, p.breakfast) : null;
+
     var out = Solver.solve({
       servings: r.input.servings || r.input.meals,
       constraints: cons, stock: stock, mustUse: mustUse,
+      target: target,
       stockDetail: Pantry.stockSummary(nowIso),   // 带紧迫度,放久的会被优先排掉
       // 冷却期 + 这一轮被「换掉」的菜。换掉了还排出来,那个按钮就等于没用。
       recentRecipeIds: Object.assign(recentIds(), excludedMap(r)),

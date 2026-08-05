@@ -356,12 +356,19 @@ var Solver = (function () {
       // 营养缺口 —— 这一项早先完全没进打分。
       // 模拟 400 个场景发现:热量达标率 15%、蛋白 35%,因为求解器只优化浪费和多样性,
       // 从不看这顿够不够吃。Profile 辛辛苦苦算出来的目标一直没人用。
+      //
+      // ⚠️ **不能只看平均**。第一版是 `short / chosen.length`,于是「一顿只有
+      //    400g 青菜(442 kcal · 蛋白 18g)」被另外三顿的蛋白盈余摊平,
+      //    分数上完全看不出来 —— 可你真到那顿是要坐下来吃它的,**平均值不能吃**。
+      //    最差的那顿单独占一半权重:一整套里只要有一顿明显不够,就得扣分。
       var short = 0;
       if (opts.target && typeof Nutrition !== 'undefined') {
-        chosen.forEach(function (c) {
-          if (c.nutrition) short += Nutrition.shortfall(c.nutrition, opts.target);
+        var shorts = chosen.map(function (c) {
+          return c.nutrition ? Nutrition.shortfall(c.nutrition, opts.target) : 0;
         });
-        short = short / chosen.length;
+        var sum = shorts.reduce(function (a, b) { return a + b; }, 0);
+        var worst = shorts.reduce(function (a, b) { return Math.max(a, b); }, 0);
+        short = (sum / shorts.length) * 0.5 + worst * 0.5;
       }
 
       var score = (1 - wasteRatio) * 100

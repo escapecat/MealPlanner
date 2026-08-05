@@ -51,6 +51,13 @@ if grep -rn "[^.a-zA-Z_]\(prompt\|alert\)(" app/ui/*.js app/core/*.js app/app.js
   fail=1
 fi
 
+# 求解器的营养项靠 rounds.js 传 target 通电。断了不会报错,只会悄悄排出
+# 「晚饭 = 一盘青菜」—— 已经发生过一次,这里钉住。
+if ! grep -q "target: target" app/ui/rounds.js; then
+  echo "✗ rounds.js 没把 target 传给 Solver —— 营养打分会整项失效"
+  fail=1
+fi
+
 if [ $fail -eq 0 ]; then
   echo "✓ 语法 · 数据层 · 脚本引用 · 回归测试 全部通过"
 else

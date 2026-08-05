@@ -120,5 +120,29 @@ Schedule.assign(meals, 2, 2);
 ok(meals.map(function (m) { return m.recipeId; }).join() === before,
    'assign 不改传进来的 meals');
 
+// --- 7. 营养目标必须真的影响排菜 ---
+//
+// ⚠️ 这条是补给一个已经发生过的事故:solver 里那条 `- short * 120` 写好了、
+//    注释也写了,但 rounds.js 从来没传 target,于是整项恒等于 0 —— **写了没接上**。
+//    线上表现:排出「晚饭 = 400g 青菜 + 一碗饭,442 kcal / 蛋白 18g」。
+//    这种「功能存在但没通电」的故障不会报错,只能靠对比测出来。
+global.Nutrition = require(path.join(A, 'core', 'nutrition.js'));
+
+var FULL = { equipment: ['炒锅', '汤锅', '不粘锅', '烤箱', '蒸锅', '空气炸锅'],
+             maxActiveMinutes: 45, maxDifficulty: 4, blacklist: [] };
+var TGT = { kcal: 700, protein: 38, veg: 200 };
+function worstProtein(res) {
+  return res.stage2.chosen.reduce(function (m, c) {
+    return Math.min(m, Nutrition.ofMeal(c.variant).protein);
+  }, 999);
+}
+var noT = Solver.solve(Object.assign({}, BASE, { constraints: FULL }));
+var wiT = Solver.solve(Object.assign({}, BASE, { constraints: FULL, target: TGT }));
+ok(noT.ok && wiT.ok, '两种都能排出来');
+ok((noT.stage2.nutritionShortfall || 0) === 0, '不传 target 时营养项确实是 0(说明它靠 target 通电)');
+ok((wiT.stage2.nutritionShortfall || 0) > 0, '传了 target 营养项就活了 —— **接线没断**');
+var w1 = worstProtein(noT), w2 = worstProtein(wiT);
+ok(w2 > w1, '传 target 后最差一顿的蛋白更高(' + w1 + 'g → ' + w2 + 'g)');
+
 console.log(fails ? '\n' + fails + ' 条挂了' : '\n全过');
 process.exit(fails ? 1 : 0);
