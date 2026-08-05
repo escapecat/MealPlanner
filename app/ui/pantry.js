@@ -385,8 +385,9 @@ var PantryUI = (function () {
     render();
   }
 
-  /** 全库浏览/搜索时用的勾选行 */
-  function pickRow(ing) {
+  /** 全库浏览/搜索时用的勾选行。
+   *  @param unknownDate 勾上时不盖今天的时间戳(第一次开柜子清点用) */
+  function pickRow(ing, unknownDate) {
     var has = Pantry.hasStaple(ing.id);
     var row = h('div', {
       style: 'display:flex;gap:10px;align-items:center;padding:7px 0;' +
@@ -395,7 +396,11 @@ var PantryUI = (function () {
     row.appendChild(h('button', {
       type: 'button',
       style: 'border:0;background:none;font-size:18px;cursor:pointer;padding:0;flex:0 0 auto',
-      onclick: function () { Pantry.toggleStaple(ing.id); render(); },
+      onclick: function () {
+        if (unknownDate) Pantry.toggleStaple(ing.id, null);
+        else Pantry.toggleStaple(ing.id);
+        render();
+      },
     }, [has ? '☑' : '☐']));
     var al = q ? Search.matchedAlias(ing, q) : null;
     row.appendChild(h('div', { style: 'flex:1' + (has ? '' : ';color:var(--text-dim)') }, [
@@ -436,6 +441,31 @@ var PantryUI = (function () {
         (a.usedInDishes ? ',库里 ' + a.usedInDishes + ' 道菜用它,下次可以优先排' : ''),
       ]));
     });
+
+    // 第一次开柜子:问一遍最常用的这几样有没有。**问,不是替他勾上。**
+    //
+    // ⚠️ 这里勾上不盖今天的时间戳(toggleStaple 传 null)——
+    //    「我有盐」不等于「我今天买了盐」,那瓶盐可能放了半年。
+    if (!Pantry.confirmed() && !q) {
+      w.appendChild(h('div', { class: 'note' }, [
+        '先清点一下 —— 这几样最常用。**没勾的会当成你没有**,以后出现在采购清单上,' +
+        '所以别勾你其实没有的。',
+      ]));
+      var c0 = h('div', { class: 'card', style: 'padding:2px 14px' });
+      Pantry.STARTER.forEach(function (id) {
+        var ing = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
+        if (ing) c0.appendChild(pickRow(ing, true));
+      });
+      w.appendChild(c0);
+      w.appendChild(h('button', {
+        class: 'btn', style: 'margin-top:12px',
+        onclick: function () { Pantry.setConfirmed(); render(); },
+      }, [mine.length ? '就这 ' + mine.length + ' 样' : '一样都没有']));
+      w.appendChild(h('div', { class: 'hint', style: 'text-align:center;margin-top:8px' }, [
+        '之后随时能改。别的调料不用在这儿备齐 —— 生成计划时缺哪样会直接问你。',
+      ]));
+      return;
+    }
 
     w.appendChild(h('div', { class: 'row' }, [
       h('input', {

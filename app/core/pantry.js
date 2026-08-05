@@ -34,7 +34,14 @@ var Pantry = (function () {
     });
   }
 
-  /** 第一次用:DESIGN 里的「启动包 11 样」预勾上,其余按需解锁 */
+  /** 最常用的 11 样。
+   *
+   * ⚠️ 这是**建议清单,不是「默认你有」**。
+   *    DESIGN 里写的是「调料按需解锁,建议先买 11 样」—— 那是一条采购建议。
+   *    早先我把它实现成了开箱即勾,后果不只是列表难看:
+   *    **采购清单永远不会提醒你买盐、油、生抽**,因为系统以为你有;
+   *    生成计划时「缺几样调料」的扣分也全是错的。
+   *    替用户假设他有什么,和替他假设他不吃什么,是同一类错误。 */
   var STARTER = ['salt', 'cooking_oil', 'light_soy_sauce', 'oyster_sauce', 'white_sugar',
                  'white_pepper', 'corn_starch', 'cooking_wine', 'cumin', 'black_pepper',
                  'sesame_oil'];
@@ -46,9 +53,22 @@ var Pantry = (function () {
     return !!(ing && ing.openedShelfLifeDays && ing.openedShelfLifeDays <= ASK_OPENED_UNDER_DAYS);
   }
 
+  /** 用户亲口确认过一次「我有哪些」了吗 —— 没有就该问,而不是猜 */
+  function confirmed() { return !!Store.get('staplesConfirmed', false); }
+  function setConfirmed() { Store.set('staplesConfirmed', true); }
+
   function ensureInit() {
-    if (staples() === null) {
-      Store.set('staples', STARTER.map(function (id) { return { id: id, openedAt: null }; }));
+    if (staples() === null) { Store.set('staples', []); return staples(); }
+
+    // 迁移:清掉旧版本自动塞进去的那 11 样。
+    // 判据是「全都在 STARTER 里 + 全都没有买入时间」= 没人动过的自动注入形状;
+    // 只要用户勾过/改过任何一样就不动他的数据。
+    if (!confirmed()) {
+      var cur = staples();
+      var untouched = cur.length > 0 && cur.every(function (e) {
+        return STARTER.indexOf(e.id) >= 0 && !e.addedAt && !e.openedAt;
+      });
+      if (untouched) Store.set('staples', []);
     }
     return staples();
   }
@@ -59,13 +79,17 @@ var Pantry = (function () {
 
   function hasStaple(id) { return !!stapleEntry(id); }
 
+  /** @param boughtAt  省略 = 今天买的;显式传 null = 有,但不知道什么时候买的。
+   *  ⚠️ 这两者必须分得开。第一次开柜子勾「我有盐」不等于「我今天买了盐」——
+   *     那瓶盐可能放了半年。给它盖个今天的时间戳,和凭空预勾一样是编造。 */
   function toggleStaple(id, boughtAt) {
     var list = (staples() || []).slice();
     var i = list.findIndex(function (x) { return x.id === id; });
     if (i >= 0) list.splice(i, 1);
-    // 勾上的那一刻默认就是「今天买/确认的」—— 不填也有个时间点,
-    // 总比「不知道放了多久」强;记错了可以改。
-    else list.push({ id: id, addedAt: boughtAt || new Date().toISOString(), openedAt: null });
+    else {
+      var at = arguments.length < 2 ? new Date().toISOString() : boughtAt;
+      list.push({ id: id, addedAt: at, openedAt: null });
+    }
     Store.set('staples', list);
     return list;
   }
@@ -305,6 +329,7 @@ var Pantry = (function () {
 
   return {
     STARTER: STARTER, staples: staples, stapleEntry: stapleEntry,
+    confirmed: confirmed, setConfirmed: setConfirmed,
     setBought: setBought, unopenedDaysLeft: unopenedDaysLeft, openedDaysLeft: openedDaysLeft,
     worthTrackingOpened: worthTrackingOpened, setOpened: setOpened,
     stapleAlerts: stapleAlerts, surplusWarning: surplusWarning,
