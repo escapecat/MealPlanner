@@ -626,19 +626,27 @@ var RoundsUI = (function () {
     Schedule.warnings(plan).forEach(function (t) {
       box.appendChild(h('div', { class: 'note warn', style: 'margin-bottom:8px' }, [t]));
     });
+
+    // ⚠️ 必须说清「一道菜 = 一顿」。
+    //    早先只给了「第 1 天」+「1. 2.」的编号,第一天两道菜到底是一顿两个菜、
+    //    还是两顿,页面上没有任何一个字回答 —— 而这是看懂整页的前提。
     box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
-      '顺序按**最容易坏的先吃**排的,不是随便排的。时间是估的,没测过。',
+      '**一道菜 = 一顿。**你选了 ' + r.input.days + ' 天 × 每天 ' + r.input.perDay +
+      ' 顿 = ' + (r.input.days * r.input.perDay) + ' 顿' +
+      (r.input.diners > 1 ? '(' + r.input.diners + ' 人份)' : '') +
+      '。顺序按最容易坏的先吃排,时间是估的。',
     ]));
 
     var lastDay = null;
     plan.forEach(function (p, i) {
       if (p.day !== lastDay) {
         box.appendChild(h('div', {
-          style: 'font-size:13px;color:var(--text-dim);margin:10px 0 4px',
+          style: 'font-weight:600;font-size:14px;margin:14px 0 4px;' +
+                 'padding-top:10px;border-top:1px solid var(--border)',
         }, ['第 ' + p.day + ' 天']));
         lastDay = p.day;
       }
-      box.appendChild(mealCard(r, p.meal, i, p));
+      box.appendChild(mealCard(r, p.meal, i, p, slotLabel(p.slot, r.input.perDay)));
     });
 
     box.appendChild(nextStep(r));
@@ -707,7 +715,15 @@ var RoundsUI = (function () {
 
   // ---------------- 菜卡 ----------------
 
-  function mealCard(r, m, i, sched) {
+  /** 第几顿叫什么。每天几顿不同,叫法也不同 —— 一天一顿就不该硬叫「午饭」。 */
+  function slotLabel(slot, perDay) {
+    if (perDay <= 1) return null;
+    if (perDay === 2) return ['午饭', '晚饭'][slot - 1] || ('第 ' + slot + ' 顿');
+    if (perDay === 3) return ['早饭', '午饭', '晚饭'][slot - 1] || ('第 ' + slot + ' 顿');
+    return '第 ' + slot + ' 顿';
+  }
+
+  function mealCard(r, m, i, sched, slot) {
     var cooking = r.status === 'cooking' || r.status === 'done';
     var rv = variantOf(m);
     var card = h('div', { class: 'card', style: 'padding:10px 12px;margin-bottom:6px' +
@@ -715,7 +731,8 @@ var RoundsUI = (function () {
 
     var head = h('div', { style: 'display:flex;gap:8px;align-items:baseline' });
     head.appendChild(h('div', { style: 'flex:1' + (m.cooked ? ';text-decoration:line-through' : '') },
-      [(i + 1) + '. ' + m.name + (m.prepLevel !== 'scratch' ? '(' + m.prepLevel + ')' : '')]));
+      [(slot ? slot + ' · ' : '') + m.name +
+       (m.prepLevel !== 'scratch' ? '(' + m.prepLevel + ')' : '')]));
     card.appendChild(head);
 
     // ⚠️ 时间标「估」。全库 512 道菜 verified 全是 false —— 这两个数字是建库时
@@ -736,10 +753,9 @@ var RoundsUI = (function () {
     }
 
     var ings = mealIngredients(m);
+    var nu = rv ? Nutrition.ofMeal(rv.variant) : null;
     if (ings.length) {
-      card.appendChild(h('div', {
-        style: 'display:flex;gap:5px;flex-wrap:wrap;margin-top:8px',
-      }, ings.map(function (x) {
+      var chips = ings.map(function (x) {
         var strong = x.role === 'main';
         return h('span', {
           style: 'font-size:12px;padding:2px 8px;border-radius:999px;' +
@@ -748,7 +764,28 @@ var RoundsUI = (function () {
                          : 'color:var(--text-dim)'),
         }, [x.name + (x.qty ? ' ' + x.qty + x.unit : (x.toTaste ? ' 适量' : '')) +
             (x.alt ? ' 或…' : '')]);
-      })));
+      });
+
+      // ⚠️ 不带主食的菜要配一碗饭 —— 这件事早就在算了(Nutrition.ofMeal 补一份米,
+      //    Solver 也把这份米加进了采购清单),**唯独没显示**。
+      //    于是「宁式烤菜」在页面上看起来就是一整顿只吃 400g 青菜,当然诡异。
+      //    nutrition.js 里那行注释写的就是「补了什么主食,UI 要显示出来」。
+      if (nu && nu.staple) {
+        chips.push(h('span', {
+          style: 'font-size:12px;padding:2px 8px;border-radius:999px;' +
+                 'border:1px dashed var(--border);color:var(--text-dim)',
+        }, ['配 ' + nu.staple.name + ' ' + nu.staple.grams + 'g(生重)']));
+      }
+      card.appendChild(h('div', {
+        style: 'display:flex;gap:5px;flex-wrap:wrap;margin-top:8px',
+      }, chips));
+    }
+
+    if (nu) {
+      card.appendChild(h('div', { class: 'hint', style: 'margin-top:6px' }, [
+        '约 ' + nu.kcal + ' kcal · 蛋白 ' + nu.protein + 'g · 蔬菜 ' + nu.veg + 'g' +
+        (nu.selfContained ? ' · 自带主食' : ' · 已含那碗饭'),
+      ]));
     }
 
     var note = (rv && rv.variant.note) || (rv && rv.recipe.note);
