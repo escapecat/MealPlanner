@@ -73,10 +73,18 @@ var Timing = (function () {
     var active = ((mainVariant && mainVariant.activeMinutes) || 0)
                + ((sideVariant && sideVariant.activeMinutes) || 0);
 
+    // ⚠️ 能吃上不能短于动手时间。
+    //    配菜的动手时间是**相加**的(真要多站十分钟),烹饪时间是取**最大**的
+    //    (两口锅并行)。两条规则各自都对,但凑一起会出「18 分能吃上、动手 25 分」——
+    //    你手上还在忙 25 分钟,不可能 18 分钟就坐下吃。
+    //    实测:库里单看菜谱没有这种数据,是配菜叠上去之后才冒出来的。
+    var cook = Math.max(cookMain, cookSide);
+    var eatIn = Math.max(ahead + cook, active);
+
     return {
       // 提前准备可以和别的事并行,但它必须先开始 —— 所以是加在前面的
-      eatIn: ahead + Math.max(cookMain, cookSide),
-      cook: Math.max(cookMain, cookSide),
+      eatIn: eatIn,
+      cook: cook,
       ahead: ahead,
       overnight: a1.overnight || a2.overnight,
       aheadText: a1.text || a2.text,
@@ -86,7 +94,7 @@ var Timing = (function () {
       //      走开的等 —— 焖、炖、烤、腌。人是自由的,只是开饭时间推后。
       //    手抓饭焖那 35 分钟属于第二种:你可以去洗澡回消息。
       //    周末做饭这两种的容忍度完全不同,所以求解器要分开约束。
-      idle: Math.max(0, ahead + Math.max(cookMain, cookSide) - active),
+      idle: Math.max(0, eatIn - active),
     };
   }
 
