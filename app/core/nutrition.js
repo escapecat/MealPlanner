@@ -11,8 +11,84 @@
 
 var Nutrition = (function () {
 
+  // 主食该占单顿热量的多少 —— 不是新数,是把已有默认值(90g 大米 ÷ 减脂男性单顿目标)写成比例
+  var STAPLE_KCAL_SHARE = 311 / 832;
+
   var DEFAULT_STAPLE = 'rice';
   var STAPLE_GRAMS = 90;      // 生重。字典里 rice 的「单次用量」就是 90g
+
+  /**
+   * 能当「一碗饭」的主食 —— **手点的,不是推导的**。
+   *
+   * ⚠️ 为什么必须有这个:`ofMeal(v, stapleId)` 一直支持传主食,可**从来没人传过**,
+   *    于是 80% 的顿(319/400)自动配的都是白米饭,**34/100 轮是四顿全白米**。
+   *    又一处「写了没接上」。
+   *
+   * ⚠️ 为什么不能按类别推:类别 `米`/`杂粮` 里混着三种完全不同的东西 ——
+   *      中筋面粉 · 糯米粉 · 粘米粉   → 是**原料**,不是一碗饭
+   *      干黄豆 · 芸豆 · 鹰嘴豆        → 豆子,能拌进饭里但不能单独当主食
+   *      燕麦片                      → 早餐,不配红烧肉
+   *    按类别一刀切会排出「红烧肉配一碗面粉」。这跟「面粉≈和面」是同一个错。
+   *
+   * 营养上的差别是真的(每 100 kcal 给多少蛋白):
+   *      白米 2.1g · 糙米 2.2g · 小米 2.5g · 薏米 3.5g · 藜麦 3.8g
+   *    红薯更特别:86 kcal/100g,同样热量能吃到 3.6 倍的量,饱腹感完全不同。
+   */
+  var STAPLE_CHOICES = ['rice', 'brown_rice', 'foxtail_millet', 'job_tears',
+                        'quinoa', 'sweet_potato'];
+
+  /**
+   * 这一顿配哪样主食 —— 在**你有的**里面轮换。
+   *
+   * ⚠️ 只在你储物柜里勾过的里面挑,不替你假设。一样都没勾就还是白米 ——
+   *    「替用户假设他有什么」是这个项目已经犯过的错(开箱即勾 11 样调料)。
+   *    想吃杂粮就去储物柜勾上,清单会跟着变。
+   *
+   * @param owned 储物柜里有的主食 id(顺序无所谓)
+   * @param used  这一轮已经用过几次 {id: 次数} —— 不传就不轮换,四顿又全一样
+   */
+  function pickStaple(owned, used) {
+    var pool = STAPLE_CHOICES.filter(function (id) {
+      return (owned || []).indexOf(id) >= 0 && ing(id) && ing(id).per100g;
+    });
+    if (!pool.length) return DEFAULT_STAPLE;
+    var seen = used || {};
+    // 用得最少的排前面;同样次数的按 STAPLE_CHOICES 原顺序(白米优先,最不折腾)
+    pool.sort(function (a, b) {
+      var d = (seen[a] || 0) - (seen[b] || 0);
+      return d !== 0 ? d : STAPLE_CHOICES.indexOf(a) - STAPLE_CHOICES.indexOf(b);
+    });
+    return pool[0];
+  }
+
+  /** 把这一顿自动配的那份主食换成另一样。
+   *  ⚠️ 只动 app 自己加的那份(n.staple)。菜谱自带主食的(焖饭/面)不碰 ——
+   *     把手抓饭的米换成红薯就不是手抓饭了。 */
+  function swapStaple(n, sid, grams) {
+    if (!n || !n.staple) return n;
+    var oldI = ing(n.staple.ingredientId), newI = ing(sid);
+    if (!oldI || !newI || !oldI.per100g || !newI.per100g) return n;
+    function d(k) {
+      return grams * (newI.per100g[k] || 0) / 100
+           - n.staple.grams * (oldI.per100g[k] || 0) / 100;
+    }
+    return Object.assign({}, n, {
+      kcal: Math.round(n.kcal + d('kcal')),
+      protein: Math.round(n.protein + d('protein')),
+      carb: Math.round(n.carb + d('carb')),
+      staple: { ingredientId: sid, name: newI.name, grams: grams },
+    });
+  }
+
+  /** 换主食之后那一份该多少克 —— 按热量折算,不是照抄 90g。
+   *  ⚠️ 红薯 86 kcal/100g,照抄 90g 只有 77 kcal,等于这顿没有主食。 */
+  function stapleGramsFor(id, target) {
+    var i = ing(id);
+    if (!i || !i.per100g || !i.per100g.kcal) return STAPLE_GRAMS;
+    var kcal = target && target.kcal ? target.kcal * STAPLE_KCAL_SHARE
+                                     : STAPLE_GRAMS * 346 / 100;
+    return Math.round(kcal / i.per100g.kcal * 100 / 10) * 10;
+  }
 
   function ing(id) {
     return INGREDIENTS.filter(function (i) { return i.id === id; })[0] || null;
@@ -176,8 +252,6 @@ var Nutrition = (function () {
    *
    * 返回和 portionBoost 同形状,solver / 采购清单 / UI 三处照同样的方式接。
    */
-  var STAPLE_KCAL_SHARE = 311 / 832;   // 90g 大米 ÷ 减脂男性单顿目标 —— 不是新数,是把已有默认值写成比例
-
   function portionScale(variant, n, target) {
     if (!variant || !n || !target || !target.kcal) return null;
 
@@ -352,6 +426,8 @@ var Nutrition = (function () {
     gramsOf: gramsOf, ofVariant: ofVariant, ofMeal: ofMeal, shortfall: shortfall,
     PROTEIN_TOPUPS: PROTEIN_TOPUPS, proteinTopUp: proteinTopUp,
     portionBoost: portionBoost, portionScale: portionScale,
+    STAPLE_CHOICES: STAPLE_CHOICES, pickStaple: pickStaple,
+    stapleGramsFor: stapleGramsFor, swapStaple: swapStaple,
   };
 })();
 

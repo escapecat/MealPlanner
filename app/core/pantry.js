@@ -46,6 +46,18 @@ var Pantry = (function () {
                  'white_pepper', 'corn_starch', 'cooking_wine', 'cumin', 'black_pepper',
                  'sesame_oil'];
 
+  /** 清点清单里还要问的:**米面杂粮**。
+   *
+   * ⚠️ 以前这份清单只有 11 样调料,米面根本不在储物柜的视野里 ——
+   *    后果是求解器只能默认「你有白米」,80% 的顿自动配白米饭、
+   *    34/100 轮四顿全白米。你在意的「主食为啥只有米饭」,根子在这儿:
+   *    **不是求解器偏爱白米,是它没有别的选项可选。**
+   *
+   *    勾了糙米/小米/红薯,它就会在这几样之间轮换(Nutrition.pickStaple)。
+   *    没勾就还是白米 —— 不替你假设你有。 */
+  var STARTER_GRAINS = ['rice', 'brown_rice', 'foxtail_millet', 'job_tears',
+                        'quinoa', 'sweet_potato'];
+
   /** 开封后有效期短于这个天数才值得记开封时间 —— 盐糖问了没意义 */
   var ASK_OPENED_UNDER_DAYS = 200;
 
@@ -363,7 +375,7 @@ var Pantry = (function () {
   }
 
   return {
-    STARTER: STARTER, staples: staples, stapleEntry: stapleEntry,
+    STARTER: STARTER, STARTER_GRAINS: STARTER_GRAINS, staples: staples, stapleEntry: stapleEntry,
     confirmed: confirmed, setConfirmed: setConfirmed,
     addCustomStaple: addCustomStaple, resolve: resolve,
     setBought: setBought, unopenedDaysLeft: unopenedDaysLeft, openedDaysLeft: openedDaysLeft,

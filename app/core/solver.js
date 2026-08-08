@@ -432,6 +432,29 @@ var Solver = (function () {
       }
       if (chosen.length < servings) continue;
 
+      // 自动配的那份主食,在**你储物柜里有的**几样之间轮换。
+      //
+      // ⚠️ `Nutrition.ofMeal(v, stapleId)` 一直支持传主食,可**从来没人传过** ——
+      //    于是 80% 的顿自动配的都是白米饭,34/100 轮是四顿全白米。
+      //    又一处「写了没接上」。
+      // ⚠️ 只在你勾过的里面挑。一样没勾就还是白米,不替你假设你有糙米 ——
+      //    「替用户假设他有什么」是这个项目开箱即勾 11 样调料时犯过的错。
+      if (typeof Nutrition !== 'undefined' && Nutrition.pickStaple) {
+        var ownedStaples = (typeof Pantry !== 'undefined' && Pantry.hasStaple)
+          ? Nutrition.STAPLE_CHOICES.filter(function (id) { return Pantry.hasStaple(id); })
+          : [];
+        var stapleUsed = {};
+        for (var pi = 0; pi < chosen.length; pi++) {
+          var pm = chosen[pi];
+          if (!pm.nutrition || !pm.nutrition.staple) continue;   // 菜自带主食的不碰
+          var sid = Nutrition.pickStaple(ownedStaples, stapleUsed);
+          stapleUsed[sid] = (stapleUsed[sid] || 0) + 1;
+          if (sid === pm.nutrition.staple.ingredientId) continue;
+          pm.nutrition = Nutrition.swapStaple(
+            pm.nutrition, sid, Nutrition.stapleGramsFor(sid, opts.target));
+        }
+      }
+
       // 蔬菜不够的那几顿,配一道够简单的青菜。
       //
       // ⚠️ 在打分**之前**做,因为配菜会吃掉剩料 —— 它同时在补蔬菜和降浪费,

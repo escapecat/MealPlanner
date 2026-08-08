@@ -503,6 +503,21 @@ var PantryUI = (function () {
         if (ing) c0.appendChild(pickRow(ing, true));
       });
       w.appendChild(c0);
+
+      // 米面杂粮 —— **这一段决定了你的计划里主食长什么样。**
+      //
+      // ⚠️ 以前清点清单只有调料,米面不在里面,于是求解器只能默认白米:
+      //    80% 的顿配白米饭、34/100 轮四顿全白米。
+      //    勾几样杂粮,它就在这几样之间轮换;不勾就还是白米。
+      w.appendChild(h('div', { class: 'note', style: 'margin-top:18px' }, [
+        '**主食**。勾几样,计划里就会换着来 —— 只勾白米就顿顿白米饭。',
+      ]));
+      var c1 = h('div', { class: 'card', style: 'padding:2px 14px' });
+      Pantry.STARTER_GRAINS.forEach(function (id) {
+        var ing = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
+        if (ing) c1.appendChild(pickRow(ing, true));
+      });
+      w.appendChild(c1);
       w.appendChild(h('button', {
         class: 'btn', style: 'margin-top:12px',
         onclick: function () { Pantry.setConfirmed(); render(); },
