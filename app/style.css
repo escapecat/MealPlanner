@@ -368,7 +368,11 @@ input:focus, select:focus {
 
 /* 行尾的小动作(改规格之类)。⚠️ 不用 .btn ——
    一行一个实心按钮,8 行就是 8 个按钮在跟主操作(勾掉)抢注意力。 */
-.act { flex: 0 0 auto; padding: var(--s1) var(--s2); border-radius: var(--r-sm);
+/* ⚠️ 行内次操作也得点得着。整行是 52px,竖着够了;横着只有两个字宽,
+   所以给 min-width/min-height —— 「次要」是视觉上退让,不是让它变得难点。 */
+.act { flex: 0 0 auto; min-height: 36px; min-width: 44px;
+       display: inline-flex; align-items: center; justify-content: center;
+       padding: var(--s1) var(--s2); border-radius: var(--r-sm);
        background: none; border: 1px solid var(--border); color: var(--text-dim);
        font: inherit; font-size: var(--t-xs); cursor: pointer;
        transition: border-color .12s var(--ease), color .12s var(--ease); }

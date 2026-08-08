@@ -631,8 +631,10 @@ var RoundsUI = (function () {
      */
     function shopRow(it, compact) {
       var actual = it.actualGrams != null ? it.actualGrams : it.needGrams;
-      var row = h('button', {
-        type: 'button',
+      // ⚠️ 用 div 不用 button:行里还挂着「规格」「改」这些可点的 span,
+      //    可点元素套在 button 里是有问题的(和菜谱页 button 套 button 同一类)。
+      //    别的列表行也都是 div,统一。
+      var row = h('div', {
         class: 'list-row' + (it.bought ? ' done' : ''),
         onclick: function () { toggleBought(r, it.ingredientId); },
       });
