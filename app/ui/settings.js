@@ -208,7 +208,8 @@ var SettingsUI = (function () {
       box.appendChild(h('div', { class: 'chips' }, quick.map(function (d) {
         return h('button', {
           type: 'button',
-          onclick: function () { save(list.concat([d.id])); },
+          // 一个芯片可以带出一组 id(「和面」= 三种面粉)—— 不然用户得自己搜三次
+          onclick: function () { save(list.concat(d.ids || [d.id])); },
         }, ['+ ' + d.name]);
       })));
     }
@@ -332,29 +333,6 @@ var SettingsUI = (function () {
           function (v) { saveConfig({ allowOvernight: v }); },
           [{ v: false, t: '不接受' }, { v: true, t: '可以' }]),
       '蛋炒饭要隔夜冷饭、泡豆要泡一晚 —— 这类共 24 个变体。选「不接受」就不给你排'));
-
-    // ⚠️ 「不想和面」用忌口机制实现,不新增一条设置。
-    //    面粉正好是「从头做面食」的精确标记:库里 33 个非面粉不可的变体
-    //    **全部是 scratch 档,一个不多一个不少**。拉黑它,13 道要醒面的菜
-    //    有 11 道自动降级到「买现成面 / 现成饼」,只有 2 道整个排除。
-    //    这比新加一条「愿意和面吗」好:同一件事只有一个开关,而且它本来就是忌口。
-    var FLOURS = ['wheat_flour_high', 'wheat_flour_medium', 'wheat_flour_low'];
-    var noDough = FLOURS.every(function (f) { return (cfg.blacklist || []).indexOf(f) >= 0; });
-    box.appendChild(h('div', { class: 'row' }, [
-      h('label', { class: 'lab' }, ['愿意从头做面食吗(和面 · 醒面)']),
-      seg(function () { return noDough; },
-          function (v) {
-            var bl = (config().blacklist || []).filter(function (x) {
-              return FLOURS.indexOf(x) < 0;
-            });
-            saveConfig({ blacklist: v ? bl.concat(FLOURS) : bl });
-          },
-          [{ v: false, t: '愿意' }, { v: true, t: '不想和面' }]),
-      h('div', { class: 'hint' }, [
-        '选「不想和面」= 把三种面粉加进忌口。库里 13 道要醒面的菜,' +
-        '**11 道会自动降级成「买现成面/现成饼」的档位**,只有炒疙瘩和鸡蛋灌饼整个排除。',
-      ]),
-    ]));
 
     box.appendChild(blacklistEditor(cfg));
 
