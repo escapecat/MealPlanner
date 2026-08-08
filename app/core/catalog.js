@@ -72,13 +72,17 @@ var Catalog = (function () {
       if (cfg.maxActiveMinutes != null && v.activeMinutes > cfg.maxActiveMinutes) return false;
       if (cfg.maxDifficulty != null && v.difficulty > cfg.maxDifficulty) return false;
 
-      // ⚠️ 「多久能吃上」是和「动手多久」不同的一条约束,不能互相顶替。
-      //    动手 20 分但锅里焖 90 分钟的菜,动手上限拦不住它 ——
-      //    可你下班回家饿着,等的就是那 90 分钟。
-      //    库里 582 个变体有 176 个超过 1 小时才能吃上、24 个要隔夜。
+      // ⚠️ 「等」有两种,得分开约束,合成一个数会同时误伤和放行:
+      //      守着的等 —— 已经在 maxActiveMinutes 里了
+      //      走开的等 —— 焖饭那 35 分钟。人是自由的,只是开饭推后。
+      //    只卡「多久能吃上」的话,焖饭(80 分)和一道守着炒 80 分钟的菜
+      //    会被同等对待 —— 可它们对你的要求完全不同。
+      //    库里 582 个变体有 91 个是「动手 ≤20 分但要等 ≥40 分」,
+      //    从焖饭(等 55 分)一直到醉蟹(等 4 天),不该一刀切。
       if (typeof Timing !== 'undefined') {
         var t = Timing.ofMeal(v, null);
         if (cfg.allowOvernight === false && t.overnight) return false;
+        if (cfg.maxIdleWait != null && t.idle > cfg.maxIdleWait) return false;
         if (cfg.maxEatIn != null && t.eatIn > cfg.maxEatIn) return false;
       }
 

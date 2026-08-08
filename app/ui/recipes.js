@@ -53,11 +53,11 @@ var RecipesUI = (function () {
   function attrLine(r, v) {
     var bits = [r.method];
     if (v) {
-      // 先说能吃上,再说动手 —— 「今天来不来得及」比「累不累」先要回答
+      // 先说能吃上,再拆成「动手 + 等」—— 这两个数对你的要求完全不同
       var t = Timing.ofMeal(v, null);
-      bits.push(Timing.fmt(t.eatIn) + '能吃上' +
-                (t.overnight ? '(要隔夜)' : (t.ahead ? '(含提前 ' + Timing.fmt(t.ahead) + ')' : '')));
-      bits.push('动手 ' + v.activeMinutes + ' 分 估');
+      bits.push(Timing.fmt(t.eatIn) + '能吃上' + (t.overnight ? '(要隔夜)' : ''));
+      bits.push('动手 ' + v.activeMinutes + ' 分' +
+                (t.idle ? ' + 等 ' + Timing.fmt(t.idle) : '') + ' 估');
       bits.push('难度 ' + v.difficulty);
     }
     if (r.spicy) bits.push(['', '微辣', '中辣', '重辣'][r.spicy] || ('辣度 ' + r.spicy));

@@ -48,6 +48,8 @@ var Timing = (function () {
     var cookMain = (mainVariant && mainVariant.totalMinutes) || 0;
     var cookSide = (sideVariant && sideVariant.totalMinutes) || 0;
     var ahead = Math.max(a1.minutes, a2.minutes);
+    var active = ((mainVariant && mainVariant.activeMinutes) || 0)
+               + ((sideVariant && sideVariant.activeMinutes) || 0);
 
     return {
       // 提前准备可以和别的事并行,但它必须先开始 —— 所以是加在前面的
@@ -56,8 +58,13 @@ var Timing = (function () {
       ahead: ahead,
       overnight: a1.overnight || a2.overnight,
       aheadText: a1.text || a2.text,
-      active: ((mainVariant && mainVariant.activeMinutes) || 0)
-            + ((sideVariant && sideVariant.activeMinutes) || 0),
+      active: active,
+      // ⚠️ 「等」有两种,不能合成一个数:
+      //      守着的等 —— 炒、煎、看火。已经算在 active 里了。
+      //      走开的等 —— 焖、炖、烤、腌。人是自由的,只是开饭时间推后。
+      //    手抓饭焖那 35 分钟属于第二种:你可以去洗澡回消息。
+      //    周末做饭这两种的容忍度完全不同,所以求解器要分开约束。
+      idle: Math.max(0, ahead + Math.max(cookMain, cookSide) - active),
     };
   }
 

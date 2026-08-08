@@ -760,9 +760,9 @@ var RoundsUI = (function () {
     var sv0 = m.side ? variantOf(m.side) : null;
     var tm = Timing.ofMeal(rv && rv.variant, sv0 && sv0.variant);
     card.appendChild(h('div', { class: 'hint' }, [
-      m.method + ' · **' + Timing.fmt(tm.eatIn) + '能吃上**' +
-      (tm.ahead ? '(含提前 ' + Timing.fmt(tm.ahead) + ')' : '') +
-      ' · 动手 ' + tm.active + ' 分 估 · 难度 ' + m.difficulty,
+      m.method + ' · **' + Timing.fmt(tm.eatIn) + '能吃上** = 动手 ' + tm.active +
+      ' 分' + (tm.idle ? ' + 等 ' + Timing.fmt(tm.idle) : '') +
+      ' 估 · 难度 ' + m.difficulty,
     ]));
 
     // 提前准备必须显眼 —— 「米泡20分钟」你要是开火前才看到就已经晚了。

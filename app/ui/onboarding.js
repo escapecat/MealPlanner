@@ -17,7 +17,7 @@ var Onboarding = (function () {
     blacklist: [],
     maxSpicy: 3,
     maxActiveMinutes: 45,
-    maxEatIn: 60,            // 默认一小时内要能吃上
+    maxIdleWait: 120,        // 周末做饭:能走开的等最多两小时
     allowOvernight: false,   // 默认不接受隔夜准备
     // ⚠️ 没有「每周预算」—— 135 条包装规格里填了参考价的是 0 条,
     //    求解器算不出这次要花多少钱,问了也没法用。
@@ -107,7 +107,7 @@ var Onboarding = (function () {
       blacklist: Catalog.expandBlacklist(state.blacklist),
       maxSpicy: state.maxSpicy,
       maxActiveMinutes: state.maxActiveMinutes,
-      maxEatIn: state.maxEatIn,
+      maxIdleWait: state.maxIdleWait,
       allowOvernight: state.allowOvernight,
     });
     var pct = Math.round(c.dishes / c.total * 100);
@@ -278,7 +278,7 @@ var Onboarding = (function () {
       blacklist: state.blacklist.slice(),
       maxSpicy: state.maxSpicy,
       maxActiveMinutes: state.maxActiveMinutes,
-      maxEatIn: state.maxEatIn,
+      maxIdleWait: state.maxIdleWait,
       allowOvernight: state.allowOvernight,
       updatedAt: now,
     });

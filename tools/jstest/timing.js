@@ -52,6 +52,20 @@ var both = Timing.ofMeal(a, b);
 ok(both.eatIn === 60, '主菜 60 分 + 配菜 10 分 → 能吃上还是 60 分(并行)');
 ok(both.active === 33, '但动手要相加 25+8=33 分(那是真要多站的)');
 
+
+// 「等」有两种,不能合成一个数
+var mengfan = byName('新疆手抓饭');
+if (mengfan) {
+  var mt = Timing.ofMeal(mengfan.variants[0], null);
+  ok(mt.active === 25 && mt.idle === 55,
+     '新疆手抓饭：动手 ' + mt.active + ' 分、空等 ' + mt.idle +
+     ' 分（泡米 20 + 焖 35）—— 两个数分开算');
+  ok(mt.eatIn === mt.active + mt.idle, '能吃上 = 动手 + 空等');
+}
+var idleOnly = Timing.ofMeal({ totalMinutes: 90, activeMinutes: 10, aheadOfTime: null }, null);
+ok(idleOnly.idle === 80,
+   '动手 10 分、锅里焖 90 分 → 空等 80 分（动手上限拦不住它）');
+
 // 全库统计 —— 这些数字是「等太久」这条约束的依据
 var n = 0, over60 = 0, overnight = 0, withAhead = 0;
 RECIPES.filter(function (r) { return r.type !== 'prep'; }).forEach(function (r) {
