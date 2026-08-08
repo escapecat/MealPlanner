@@ -17,6 +17,8 @@ var Onboarding = (function () {
     blacklist: [],
     maxSpicy: 3,
     maxActiveMinutes: 45,
+    maxEatIn: 60,            // 默认一小时内要能吃上
+    allowOvernight: false,   // 默认不接受隔夜准备
     // ⚠️ 没有「每周预算」—— 135 条包装规格里填了参考价的是 0 条,
     //    求解器算不出这次要花多少钱,问了也没法用。
     //    DESIGN.md 自己写的:「接不上动作的就是虚荣指标,删掉」。价格数据填上再加回来。
@@ -105,6 +107,8 @@ var Onboarding = (function () {
       blacklist: Catalog.expandBlacklist(state.blacklist),
       maxSpicy: state.maxSpicy,
       maxActiveMinutes: state.maxActiveMinutes,
+      maxEatIn: state.maxEatIn,
+      allowOvernight: state.allowOvernight,
     });
     var pct = Math.round(c.dishes / c.total * 100);
     box.innerHTML = '';
@@ -274,6 +278,8 @@ var Onboarding = (function () {
       blacklist: state.blacklist.slice(),
       maxSpicy: state.maxSpicy,
       maxActiveMinutes: state.maxActiveMinutes,
+      maxEatIn: state.maxEatIn,
+      allowOvernight: state.allowOvernight,
       updatedAt: now,
     });
     if (Onboarding.onDone) Onboarding.onDone();

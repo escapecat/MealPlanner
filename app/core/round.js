@@ -99,6 +99,8 @@ var Round = (function () {
         equipment: (config.equipment || []).slice(),
         maxSpicy: config.maxSpicy,
         maxActiveMinutes: config.maxActiveMinutes,
+        maxEatIn: config.maxEatIn,
+        allowOvernight: config.allowOvernight,
         blacklist: (config.blacklist || []).slice(),
       },
       packages: [],      // 采购清单,勾「已买」后进库存
@@ -114,6 +116,10 @@ var Round = (function () {
       equipment: o.equipment || config.equipment,
       maxSpicy: o.maxSpicy != null ? o.maxSpicy : config.maxSpicy,
       maxActiveMinutes: o.maxActiveMinutes != null ? o.maxActiveMinutes : config.maxActiveMinutes,
+      // 「多久能吃上」是另一条约束:动手 20 分但锅里焖 90 分钟的菜,
+      // 动手上限拦不住它,可你饿着等的就是那 90 分钟。
+      maxEatIn: o.maxEatIn != null ? o.maxEatIn : config.maxEatIn,
+      allowOvernight: o.allowOvernight != null ? o.allowOvernight : config.allowOvernight,
       blacklist: (config.blacklist || []).concat(o.blacklistAdd || []),
       mustUse: o.mustUse || [],      // 临期库存,必须排掉
     };
@@ -135,7 +141,8 @@ var Round = (function () {
   function overrideLabels(r) {
     var o = (r.input && r.input.overrides) || {};
     var out = [];
-    if (o.maxActiveMinutes != null) out.push('限 ' + o.maxActiveMinutes + ' 分钟');
+    if (o.maxActiveMinutes != null) out.push('限动手 ' + o.maxActiveMinutes + ' 分钟');
+    if (o.maxEatIn != null) out.push('限 ' + o.maxEatIn + ' 分钟内能吃上');
     if (o.maxSpicy != null) out.push(['不吃辣', '微辣', '中辣', '重辣'][o.maxSpicy]);
     if (o.blacklistAdd && o.blacklistAdd.length) out.push('临时忌口 ' + o.blacklistAdd.length + ' 项');
     if (o.mustUse && o.mustUse.length) out.push('清 ' + o.mustUse.length + ' 样库存');

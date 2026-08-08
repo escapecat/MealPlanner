@@ -302,6 +302,23 @@ var SettingsUI = (function () {
           [{ v: 20, t: '20 分' }, { v: 30, t: '30 分' }, { v: 45, t: '45 分' }, { v: 999, t: '不限' }]),
       '算的是活跃时间 —— 焖煮的那段不占你的时间。单次想临时改,在新建记录时改就行'));
 
+    // ⚠️ 「多久能吃上」和「动手多久」是两条不同的约束,不能互相顶替。
+    //    动手 20 分但锅里焖 90 分钟的菜,动手上限拦不住它 ——
+    //    可你下班回家饿着,等的就是那 90 分钟。
+    //    而且库里的「总分钟」不含提前准备:木耳炒蛋写 20 分,要先泡发 30 分钟。
+    box.appendChild(row('多久能吃上(上限)',
+      seg(function () { return cfg.maxEatIn; },
+          function (v) { saveConfig({ maxEatIn: v }); },
+          [{ v: 30, t: '30 分' }, { v: 45, t: '45 分' }, { v: 60, t: '1 小时' },
+           { v: 90, t: '1.5 小时' }, { v: 9999, t: '不限' }]),
+      '从动手到能吃上,**含提前腌/泡发的时间**。库里 582 个变体有 176 个超过 1 小时'));
+
+    box.appendChild(row('接受隔夜准备吗',
+      seg(function () { return cfg.allowOvernight !== false; },
+          function (v) { saveConfig({ allowOvernight: v }); },
+          [{ v: false, t: '不接受' }, { v: true, t: '可以' }]),
+      '蛋炒饭要隔夜冷饭、泡豆要泡一晚 —— 这类共 24 个变体。选「不接受」就不给你排'));
+
     box.appendChild(blacklistEditor(cfg));
 
     box.appendChild(h('div', { class: c.dishes < c.total * 0.25 ? 'note warn' : 'note' }, [

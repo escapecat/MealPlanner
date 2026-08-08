@@ -752,21 +752,26 @@ var RoundsUI = (function () {
        (m.prepLevel !== 'scratch' ? '(' + m.prepLevel + ')' : '')]));
     card.appendChild(head);
 
-    // ⚠️ 时间标「估」。全库 512 道菜 verified 全是 false —— 这两个数字是建库时
-    //    一条条估出来的,没测过也没出处。相对大小大概对(炒蛋比手抓饭快),
-    //    绝对值别当真。不标的话它看起来就像测量值,和包装规格是同一类错误。
+    // ⚠️ **先说多久能吃上,再说动手多久。**
+    //    你要决定的是「今天来不来得及做这个」,那是 eatIn;
+    //    动手分钟回答的是「累不累」,是第二位的。
+    //    而且库里的「总分钟」不含提前准备 —— 木耳炒蛋写 20 分,
+    //    实际要先泡发 30 分钟,真正能吃上是 50 分。214 个变体有这个坑。
+    var sv0 = m.side ? variantOf(m.side) : null;
+    var tm = Timing.ofMeal(rv && rv.variant, sv0 && sv0.variant);
     card.appendChild(h('div', { class: 'hint' }, [
-      m.method + ' · 动手 ' + m.activeMinutes + ' 分' +
-      (m.totalMinutes > m.activeMinutes ? '(总共 ' + m.totalMinutes + ' 分)' : '') +
-      ' 估 · 难度 ' + m.difficulty,
+      m.method + ' · **' + Timing.fmt(tm.eatIn) + '能吃上**' +
+      (tm.ahead ? '(含提前 ' + Timing.fmt(tm.ahead) + ')' : '') +
+      ' · 动手 ' + tm.active + ' 分 估 · 难度 ' + m.difficulty,
     ]));
 
     // 提前准备必须显眼 —— 「米泡20分钟」你要是开火前才看到就已经晚了。
-    // 这一条数据早就在库里,只是一直没进 UI。
-    var ahead = rv && rv.variant.aheadOfTime;
-    if (ahead && ahead !== '—') {
-      card.appendChild(h('div', { class: 'note warn', style: 'margin-top:8px' },
-        ['提前:' + ahead]));
+    var note0 = Timing.startNote(tm);
+    if (note0) {
+      card.appendChild(h('div', {
+        class: 'note warn', style: 'margin-top:8px',
+      }, [tm.overnight ? note0 : (tm.aheadText + ' —— 比想吃的时间提前 ' +
+                                  Timing.fmt(tm.eatIn) + '动手')]));
     }
 
     var ings = mealIngredients(m);

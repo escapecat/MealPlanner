@@ -71,6 +71,17 @@ var Catalog = (function () {
     return (recipe.variants || []).filter(function (v) {
       if (cfg.maxActiveMinutes != null && v.activeMinutes > cfg.maxActiveMinutes) return false;
       if (cfg.maxDifficulty != null && v.difficulty > cfg.maxDifficulty) return false;
+
+      // ⚠️ 「多久能吃上」是和「动手多久」不同的一条约束,不能互相顶替。
+      //    动手 20 分但锅里焖 90 分钟的菜,动手上限拦不住它 ——
+      //    可你下班回家饿着,等的就是那 90 分钟。
+      //    库里 582 个变体有 176 个超过 1 小时才能吃上、24 个要隔夜。
+      if (typeof Timing !== 'undefined') {
+        var t = Timing.ofMeal(v, null);
+        if (cfg.allowOvernight === false && t.overnight) return false;
+        if (cfg.maxEatIn != null && t.eatIn > cfg.maxEatIn) return false;
+      }
+
       if (variantHasBlacklisted(v, cfg.blacklist)) return false;
       // variant 自己也可能要额外厨具(速冻版就不需要擀面杖)
       if (v.equipmentRequired && v.equipmentRequired.length) {
