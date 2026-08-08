@@ -926,6 +926,19 @@ var RoundsUI = (function () {
       })));
     }
 
+    // 拿别的锅顶的时候,注意事项要在做饭页面上看得见 —— 站在灶台前才是需要它的时刻
+    if (rv) {
+      var chk = Equipment.check(rv.recipe, config().equipment,
+                                (rv.variant.equipmentRequired || []).length
+                                  ? rv.variant.equipmentRequired : null);
+      (chk.subs || []).forEach(function (sub) {
+        if (!sub.note) return;
+        card.appendChild(h('div', { class: 'note', style: 'margin-top:8px' }, [
+          '没有' + sub.need + ',用 **' + sub.via + '** 顶:' + sub.note,
+        ]));
+      });
+    }
+
     var acts = h('div', { style: 'display:flex;gap:6px;margin-top:10px;flex-wrap:wrap' });
 
     // ⚠️ 库里**没有做法步骤**,只有上面那一行备注。

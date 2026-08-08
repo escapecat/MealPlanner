@@ -51,5 +51,35 @@ ok(/function constraintsOf/.test(src), 'constraintsOf 还在');
     ok(src.indexOf(f + ': cfg.' + f) >= 0, 'constraintsOf 带上了 ' + f);
   });
 
+
+// --- 厨具替代:蒸和焖饭最不挑锅,别把人卡死 ---
+//
+// ⚠️ 蒸架第一版在替代矩阵里**整条都没有** —— 45 道菜要它,却没写谁能顶。
+//    而「蒸」这件事家里但凡有个带盖的锅都能干:汤锅架个碗、炒锅加盖、
+//    电饭煲自带蒸格。厨具是排除菜谱的第一大原因(165 道),这种漏写代价很大。
+global.Equipment = require(path.join(A, 'core', 'equipment.js'));
+var steamed = RECIPES.filter(function (r) {
+  return (r.equipmentRequired || []).indexOf('蒸架') >= 0 && r.method === '蒸';
+})[0];
+ok(!!steamed, '库里有要蒸架的蒸菜(' + (steamed ? steamed.name : '?') + ')');
+if (steamed) {
+  ['汤锅', '炒锅', '电饭煲'].forEach(function (pot) {
+    var e = Equipment.check(steamed, [pot]);
+    ok(e.ok, '只有' + pot + '也能蒸');
+    var sub = (e.subs || []).filter(function (x) { return x.need === '蒸架'; })[0];
+    ok(!!(sub && sub.note), '而且带出了注意事项(' + pot + ')');
+  });
+}
+
+// 电饭煲能顶汤锅炖汤 —— 现在的电饭煲基本都有煲汤模式
+ok(Equipment.satisfy('汤锅', ['电饭煲'], '炖').ok, '电饭煲能顶汤锅炖');
+ok(Equipment.satisfy('蒸架', ['电饭煲'], '蒸').ok, '电饭煲能顶蒸架蒸');
+// 但爆炒没得顶 —— 这条硬要求不能被顺手放开
+ok(!Equipment.satisfy('炒锅', ['汤锅'], '爆').ok, '爆炒仍然非炒锅不可');
+
+var pots = { equipment: ['炒锅', '汤锅'] };
+var withPots = Catalog.countAvailable(Object.assign({}, BASE, pots)).dishes;
+ok(withPots > 340, '只有炒锅+汤锅时可做 ' + withPots + ' 道(补矩阵前是 306)');
+
 console.log(fails ? '\n' + fails + ' 条挂了' : '\n全过');
 process.exit(fails ? 1 : 0);

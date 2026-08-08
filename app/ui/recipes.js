@@ -130,6 +130,19 @@ var RecipesUI = (function () {
       if (v.equipmentRequired && v.equipmentRequired.length) {
         box.appendChild(h('div', { class: 'hint' }, ['要 ' + v.equipmentRequired.join(' · ')]));
       }
+
+      // ⚠️ 「你是拿什么顶的、要注意什么」以前**一处都没显示**。
+      //    替代矩阵里每条都写了限制条件(「锅底放水架个碗」「不粘锅火别开太大」),
+      //    写了不给人看等于白写 —— 而这正是「我没有蒸架但还是能做」的关键信息。
+      var chk = Equipment.check(r, cfg.equipment,
+                                (v.equipmentRequired && v.equipmentRequired.length)
+                                  ? v.equipmentRequired : null);
+      (chk.subs || []).forEach(function (sub) {
+        if (!sub.note) return;
+        box.appendChild(h('div', { class: 'note', style: 'margin-top:6px' }, [
+          '你没有这个,用 **' + sub.via + '** 顶:' + sub.note,
+        ]));
+      });
     });
 
     box.appendChild(h('div', { class: 'hint', style: 'margin-top:8px' }, [
