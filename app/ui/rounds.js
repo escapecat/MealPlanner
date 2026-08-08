@@ -529,15 +529,18 @@ var RoundsUI = (function () {
    * ⚠️ 折起来不等于藏起来:折起的那半永远点得开 ——
    *    「在超市里想起来看一眼这几天做什么」是真实需求,不该逼你换页。
    */
-  function secBar(id, label, open) {
+  // ⚠️ 折叠条**只在那一半收起时才渲染**,所以点它一定是「展开我」——
+  //    不存在「点开着的那条把它收起来」。两半始终恰好开一个,是个手风琴。
+  //    (第一版这里写了 `openSec = open ? '' : id`,那个 '' 分支永远走不到。)
+  function secBar(id, label) {
     return h('div', {
       class: 'list-row',
       style: 'border:1px solid var(--border);border-radius:var(--r-md);' +
              'margin-bottom:12px;background:var(--surface)',
-      onclick: function () { openSec = open ? '' : id; render(); },
+      onclick: function () { openSec = id; render(); },
     }, [
       h('div', { class: 'body' }, [h('div', { class: 'ttl' }, [label])]),
-      h('span', { class: 'dim' }, [open ? '▴' : '▸']),
+      h('span', { class: 'dim' }, ['▸']),
     ]);
   }
 
@@ -600,7 +603,7 @@ var RoundsUI = (function () {
     var boughtN = done.length, allN = s.shopping.length;
     if (!shopOpen) {
       box.appendChild(secBar('shop',
-        '采购清单 · ' + (todo.length ? '还差 ' + todo.length + ' 样' : '都买齐了'), false));
+        '采购清单 · ' + (todo.length ? '还差 ' + todo.length + ' 样' : '都买齐了')));
     }
     if (shopOpen) box.appendChild(h('div', { class: 'between', style: 'margin:16px 0 8px' }, [
       h('div', { style: 'font-weight:600' },
@@ -812,7 +815,7 @@ var RoundsUI = (function () {
     ]));
 
     if (!menuOpen) {
-      box.appendChild(secBar('menu', '这几天做什么 · ' + (s.meals || []).length + ' 顿', false));
+      box.appendChild(secBar('menu', '这几天做什么 · ' + (s.meals || []).length + ' 顿'));
     }
     var lastDay = null;
     plan.forEach(function (p, i) {

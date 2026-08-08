@@ -123,10 +123,22 @@ if (loaded === srcs.length) {
   ok(appDiv.children.length > 0, '冷启动:#app 里渲染出内容了(不是白屏)');
 
   // 填一份 profile 让它跳过 onboarding,然后逐页挂载
-  mem.profile = JSON.stringify({ sex: 'male', age: 30, heightCm: 175, activity: 'light',
+  // ⚠️ 键必须带 Store 的命名空间前缀(lib/store.js: NS = 'mealplanner:')。
+  //    **少了它,这些测试数据 app 一个字都读不到** —— 于是前面所有页面
+  //    测的都是「没填过任何配置」的状态:菜谱页没有「我能做的」、
+  //    计划页排不出菜(no-candidates)。测试一直是绿的,因为它只断言
+  //    「挂载后有内容」,而空状态当然也有内容。
+  //    是加计划页交互路径时才暴露的 —— 一走到「生成」就排不出来。
+  var NS = 'mealplanner:';
+  mem[NS + 'staples'] = JSON.stringify(
+    ['salt', 'cooking_oil', 'light_soy_sauce', 'oyster_sauce', 'white_sugar',
+     'corn_starch', 'cooking_wine', 'rice'].map(function (id) { return { id: id }; }));
+  mem[NS + 'staplesMigrated'] = 'true';
+  mem[NS + 'staplesConfirmed'] = 'true';
+  mem[NS + 'profile'] = JSON.stringify({ sex: 'male', age: 30, heightCm: 175, activity: 'light',
                                  goal: 'maintain', breakfast: 'normal' });
-  mem.weightLog = JSON.stringify([{ date: '2026-01-01T00:00:00.000Z', kg: 70 }]);
-  mem.config = JSON.stringify({ equipment: ['炒锅', '汤锅', '不粘锅'], maxSpicy: 3,
+  mem[NS + 'weightLog'] = JSON.stringify([{ date: '2026-01-01T00:00:00.000Z', kg: 70 }]);
+  mem[NS + 'config'] = JSON.stringify({ equipment: ['炒锅', '汤锅', '不粘锅'], maxSpicy: 3,
                                 maxActiveMinutes: 45, maxIdleWait: 120,
                                 allowOvernight: false, blacklist: [] });
 
@@ -155,6 +167,49 @@ if (loaded === srcs.length) {
     return (n.text || '') + n.all().map(function (c) { return c.text || ''; }).join('');
   }
   function fire(n) { n.handlers.click.forEach(function (f) { f({ target: n }); }); }
+
+  // ---- 计划页:建一轮 → 生成 → 折叠条 ----
+  //
+  // ⚠️ 这条以前**完全没测**。前面只测了「挂载后有内容」,而计划页挂载出来
+  //    是个空列表 —— 真正会白屏的是「排完之后那一屏」,它才是这个 app 的正屏。
+  //    采购清单、菜卡、折叠条全在那儿,一个 undefined 就整页空白,
+  //    而空列表页照样绿。
+  (function () {
+    var node = new El('div');
+    try {
+      ctx.RoundsUI.mount(node);
+      var mk = clickable(node, '这次要做饭');
+      ok(!!mk, '计划页有「这次要做饭了」按钮');
+      if (mk) fire(mk);
+      var save = clickable(node, '记下这一次');
+      ok(!!save, '点开之后出现了「记下这一次」');
+      if (save) fire(save);
+      var gen = clickable(node, '生成采购清单');
+      ok(!!gen, '轮次建好之后出现了「生成采购清单和菜」');
+      if (gen) fire(gen);
+      // 排出来了没有 —— 排不出来的话页面上只会有个弹层,列表还是「待生成」
+      ok(txt(node).indexOf('还要买') >= 0 || txt(node).indexOf('都买齐了') >= 0,
+         '生成之后画出了采购清单');
+      // ⚠️ 折叠条:一屏两件事的开关。它坏了的表现是「菜单再也点不开」——
+      //    不报错,只是内容够不着。
+      var bar = clickable(node, '这几天做什么');
+      ok(!!bar, '待采购阶段把菜单折成了一条(「这几天做什么」)');
+      if (bar) {
+        fire(bar);
+        ok(txt(node).indexOf('一道菜 = 一顿') >= 0, '点开折叠条之后菜单真的展开了');
+        var bar2 = clickable(node, '采购清单 ·');
+        ok(!!bar2, '菜单展开后,采购清单折成了一条');
+        if (bar2) {
+          fire(bar2);
+          ok(txt(node).indexOf('还要买') >= 0, '再点回去,采购清单又展开了');
+        }
+      }
+    } catch (e) {
+      ok(false, '计划页交互路径抛异常:' + e.message);
+      console.log('         ' + (e.stack || '').split(String.fromCharCode(10))
+                                  .slice(1, 3).join(String.fromCharCode(10) + '         '));
+    }
+  })();
 
   (function () {
     var node = new El('div');
