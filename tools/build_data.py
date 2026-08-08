@@ -462,6 +462,40 @@ def main():
     recs = build_recipes(known)
     pkgs = build_packages()
 
+    # 计件项:qty 有值但 grams 没有。字典给了单位换算的就**换算出来**。
+    #
+    # ⚠️ 这一步早先只做了「报告缺哪些换算」,没做「把有的换算应用上」。
+    #    后果是 178 个食材项 grams=null,而营养核算和采购清单都按 grams 走 ——
+    #    「鸡蛋 2个」于是贡献 0 kcal、0 蛋白,采购清单里也不会出现鸡蛋。
+    #    菜谱写着放两个蛋,系统当它不存在。
+    #
+    #    换算不是猜:字典里 egg.unitConv = {个: 50} 是查过的数据。
+    #    但仍然标 gramsFrom='unitConv',和原文直接写克重的区分开 ——
+    #    以后要核对精度时得分得清哪些是抄的、哪些是算的。
+    conv = {}
+    for i in ings:
+        if i.get('unitConv'):
+            conv[i['id']] = i['unitConv']
+
+    applied = 0
+    for r in recs:
+        for v in r['variants']:
+            for it in v['ingredients'] + v['seasonings']:
+                if it['grams'] is not None or it['qty'] is None:
+                    continue
+                u = it['unit']
+                if not u:
+                    continue
+                table = conv.get(it['ids'][0], {})
+                if table.get(u):
+                    it['grams'] = round(it['qty'] * table[u], 1)
+                    it['gramsFrom'] = 'unitConv'
+                    applied += 1
+    if applied:
+        print('\n按字典的单位换算补出 %d 处克重(标 gramsFrom=unitConv,和原文写的克重分开)'
+              % applied)
+
+
     emit('ingredients.js', 'INGREDIENTS', ings, '食材字典(含预制成品)')
     emit('recipes.js', 'RECIPES', recs, '菜谱库(变体已合并进 variants)')
     emit('packages.js', 'PACKAGES', pkgs, '包装规格默认值 —— 用户可就地编辑')
@@ -470,11 +504,6 @@ def main():
     print('\n菜谱 %d 道 · variants %d 个(含 scratch 基础档)· 食材 %d 条 · 包装 %d 条'
           % (len(recs), nvar, len(ings), len(pkgs)))
 
-    # 计件项:qty 有值但 grams 没有,且字典也没给单位换算 —— 求解器算不出重量
-    conv = {}
-    for i in ings:
-        if i.get('unitConv'):
-            conv[i['id']] = i['unitConv']
     need = {}
     for r in recs:
         for v in r['variants']:

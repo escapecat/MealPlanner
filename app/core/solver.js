@@ -247,7 +247,11 @@ var Solver = (function () {
     var sideCands = [];
     stage1Result.pool.forEach(function (e) {
       e.variants.forEach(function (v) {
-        var nu = (typeof Nutrition !== 'undefined') ? Nutrition.ofMeal(v) : null;
+        // ⚠️ 配菜用 ofVariant(菜本身),不是 ofMeal。
+        //    ofMeal 会给不带主食的菜补一碗饭 —— 可配菜是跟主菜共用那碗饭的。
+        //    用错了:蒜蓉西兰花本身 91 kcal 会被算成 402,所有配菜都判成「太重」,
+        //    而且叠回主菜时会重复计一碗饭的热量。
+        var nu = (typeof Nutrition !== 'undefined') ? Nutrition.ofVariant(v) : null;
         if (typeof Meal !== 'undefined' && !Meal.isSimpleSide(v, nu, opts.target)) return;
         sideCands.push({ recipe: e.recipe, variant: v, nutrition: nu,
                          missing: (typeof Pantry !== 'undefined')
@@ -381,9 +385,15 @@ var Solver = (function () {
             });
             if (it.role === 'main' || it.role === 'side') needSet[it.ids[0]] = 1;
           });
-          // 配上之后这一顿的蔬菜就够了 —— 打分要按补齐后的算,否则白配
-          cm.nutrition = Object.assign({}, cm.nutrition,
-            { veg: cm.nutrition.veg + (sd.veg || 0) });
+          // 配上之后这一顿的蔬菜和热量都要按补齐后的算,否则白配 ——
+          // 蔬菜不叠的话打分看不见配菜的功劳,热量不叠的话「吃撑」那条罚不到。
+          var sn = (typeof Nutrition !== 'undefined')
+                   ? Nutrition.ofVariant(sd._cand.variant) : { kcal: 0, protein: 0, veg: 0 };
+          cm.nutrition = Object.assign({}, cm.nutrition, {
+            veg: cm.nutrition.veg + Math.round(sn.veg),
+            kcal: cm.nutrition.kcal + Math.round(sn.kcal),
+            protein: cm.nutrition.protein + Math.round(sn.protein),
+          });
         }
       }
 

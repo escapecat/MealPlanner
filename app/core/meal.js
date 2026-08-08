@@ -34,16 +34,17 @@ var Meal = (function () {
 
   /** 还缺不缺青菜。
    *
-   * ⚠️ 两个条件都要满足,不能只看蔬菜少。
-   *    配菜不是白来的:它要么吃掉剩料(好),要么**为了 200g 菜开一整包**(浪费),
-   *    而且不管哪种都会往这顿里再加 100-200 kcal(可能吃撑)。
-   *    所以热量已经顶到目标的菜不再配 —— 红烧肉那顿 1581 kcal,
-   *    再给它配一盘蒜蓉西兰花是帮倒忙。 */
+   * ⚠️ 这里**不看热量**。第一版加了「热量顶到目标 115% 就不配青菜」,
+   *    结果把红烧肉这类菜彻底堵死了:它 1592 kcal 拿不到配菜 → 蔬菜永远 0g
+   *    → 缺口分 1.53 → 12 轮一次都排不上。等于把一道正经菜从库里除名了。
+   *
+   *    那条规则是反的:**200g 烫青菜才 50 kcal**,加在 1592 上是噪音,
+   *    却能补掉整个蔬菜缺口。真正防「吃撑」的是 Nutrition.shortfall 里的
+   *    超标扣分,不该由配菜这一步兼职。
+   *    这里只保证配菜本身是轻的(isSimpleSide 卡了它的热量)。 */
   function needsGreens(nutrition, target) {
     if (!nutrition) return false;
-    if (nutrition.veg >= vegFloor(target)) return false;
-    var kcalCap = target && target.kcal ? target.kcal * 1.15 : 900;
-    return nutrition.kcal < kcalCap;
+    return nutrition.veg < vegFloor(target);
   }
 
   /** 一份烫青菜多少克 —— 补到门槛就行,不硬凑 */
@@ -53,10 +54,16 @@ var Meal = (function () {
   }
 
   /** 配菜必须**够简单** —— 你要的是「再弄个青菜」,不是再做一道菜。
-   *  库里符合这三条的有 30 道:蒜蓉西兰花 · 手撕包菜 · 白灼上海青 · 凉拌黄瓜 ·
-   *  蒸南瓜 · 空炸杂烤蔬菜……做法本身是有变化的,不该写死成「烫一下」。 */
+   *  库里符合这几条的有 30 道:蒜蓉西兰花 · 手撕包菜 · 白灼上海青 · 凉拌黄瓜 ·
+   *  蒸南瓜 · 空炸杂烤蔬菜……做法本身是有变化的,不该写死成「烫一下」。
+   *
+   *  ⚠️ 传进来的 nutrition 必须是 **ofVariant(菜本身)**,不是 ofMeal。
+   *     配菜跟主菜共用那碗饭,不该自带一份 —— 蒜蓉西兰花本身 91 kcal,
+   *     按 ofMeal 算是 402 kcal(多了一碗饭的 311)。用错了会把所有配菜
+   *     都判成「太重」,而且给主菜叠热量时会重复计一碗饭。 */
   var SIDE_MAX_ACTIVE = 12;
   var SIDE_MAX_DIFFICULTY = 2;
+  var SIDE_MAX_KCAL = 250;          // 配菜就该是轻的;重了就不是「再弄个青菜」
 
   function isSimpleSide(variant, nutrition, target) {
     if (!variant || !nutrition) return false;
@@ -64,6 +71,7 @@ var Meal = (function () {
     if (variant.difficulty > SIDE_MAX_DIFFICULTY) return false;
     if ((variant.potsUsed || 1) > 1) return false;
     if (nutrition.veg < 100) return false;
+    if (nutrition.kcal > SIDE_MAX_KCAL) return false;
     // 蛋白高的不该当配菜 —— 那是另一道主菜,会把一顿变成两道正经菜
     return nutrition.protein < proteinFloor(target);
   }
