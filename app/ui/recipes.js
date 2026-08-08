@@ -475,6 +475,24 @@ var RecipesUI = (function () {
     return loop();
   }
 
+  /** render() 会把整棵子树重建,输入框跟着被销毁 —— 焦点和光标位置一起没。
+   *  给输入框一个稳定 id,重建后按 id 找回来并恢复光标位置。
+   *  (中文输入法的组字状态救不回来,那个靠 composition 事件挡住重渲染。) */
+  function keepFocus(fn) {
+    var a = document.activeElement;
+    var id = a && a.attrs ? a.attrs.id : (a && a.id);
+    var ss = null, se = null;
+    if (id && a.tagName === 'INPUT') {
+      try { ss = a.selectionStart; se = a.selectionEnd; } catch (e) {}
+    }
+    fn();
+    if (!id) return;
+    var n = el.querySelector('#' + id);
+    if (!n) return;
+    n.focus();
+    if (ss != null) { try { n.setSelectionRange(ss, se); } catch (e) {} }
+  }
+
   function render() { keepFocus(doRender); }
 
   function doRender() {
