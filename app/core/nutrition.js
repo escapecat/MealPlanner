@@ -93,6 +93,16 @@ var Nutrition = (function () {
    */
   var BOOST_MAX_MULT = 1.5;
   var BOOST_MAX_ADD = 120;
+
+  /** 一顿里同一样蛋白源最多吃多少 —— **按常识定的,不是数据**。
+   *
+   * ⚠️ 没有这条会排出「番茄炒蛋 鸡蛋 230g」= 4.6 个蛋、
+   *    「韩式蛋卷 245g」= 4.9 个蛋。倍数上限(1.5x)拦不住,
+   *    因为菜谱基数本来就不小;而鸡蛋蛋白密度低(13g/100g),
+   *    靠加蛋补蛋白效率最差,却因为它是主料被选中加量。
+   *    人不会一顿吃五个蛋 —— 这种建议一出现,整份计划的可信度就没了。 */
+  var PER_MEAL_CAP = { '蛋': 150, '畜肉': 250, '禽肉': 250, '水产': 250,
+                       '豆制品': 300, '加工肉': 150, '内脏': 200 };
   var BOOST_MIN_PROTEIN_DENSITY = 10;   // 低于这个的不算蛋白源,加了也没用
 
   function portionBoost(variant, n, target) {
@@ -125,6 +135,10 @@ var Nutrition = (function () {
       if (room <= 0) return null;
       if (best.kcal100 > 0) add = Math.min(add, room / best.kcal100 * 100);
     }
+
+    // 按类别封顶:一顿吃五个蛋这种建议一出现,整份计划就没人信了
+    var cap = PER_MEAL_CAP[(ing(best.id) || {}).category];
+    if (cap) add = Math.min(add, Math.max(0, cap - best.from));
 
     add = Math.round(add / 10) * 10;
     if (add < 20) return null;              // 加不到 20g 不值得改清单
@@ -169,13 +183,19 @@ var Nutrition = (function () {
    * ⚠️ 连着四顿加同一样东西,不管那样东西多合适都是坏结果:
    *    一是腻,二是你可能压根不爱吃它。轮换的成本几乎为零,不轮换的代价是整份计划废掉。
    */
-  function proteinTopUp(n, target, blacklist, used) {
+  /** @param already 这一顿已经用到的食材 id —— 补的不能和它们重复。
+   *
+   * ⚠️ 不传的话会排出「菠菜炒蛋(鸡蛋 230g)+ 补鸡蛋 100g」= 一顿 6.6 个蛋,
+   *    或者「香煎豆腐 300g + 补北豆腐」。补充项的意义是**补上这顿缺的那类**,
+   *    再加一份同样的东西既没营养意义也没人这么吃。 */
+  function proteinTopUp(n, target, blacklist, used, already) {
     if (!n || !target || !target.protein) return null;
     var gap = target.protein - n.protein;
     if (gap < 8) return null;                 // 差一点点不值得多买一样东西
 
     var bad = {};
     (blacklist || []).forEach(function (b) { bad[b] = 1; });
+    (already || []).forEach(function (b) { bad[b] = 1; });
     var seen = used || {};
 
     // 用得最少的排前面;同样次数的保持原有顺序(蛋白密度高的优先)

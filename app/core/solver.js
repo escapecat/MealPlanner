@@ -429,8 +429,16 @@ var Solver = (function () {
           var usedUp = {};    // 这一轮用过哪些补充项 —— 不传的话四顿全是同一样
           for (var ti = 0; ti < chosen.length; ti++) {
             var tm = chosen[ti];
+            // 这一顿已经用到的食材(主菜 + 配菜)—— 补的不能再是同一样
+            var inMeal = [];
+            (tm.variant.ingredients || []).forEach(function (it) { inMeal.push(it.ids[0]); });
+            if (tm.side && tm.side._cand) {
+              (tm.side._cand.variant.ingredients || []).forEach(function (it) {
+                inMeal.push(it.ids[0]);
+              });
+            }
             var up = Nutrition.proteinTopUp(tm.nutrition, opts.target,
-                                            (opts.constraints || {}).blacklist, usedUp);
+                                            (opts.constraints || {}).blacklist, usedUp, inMeal);
             if (!up) continue;
             usedUp[up.ingredientId] = (usedUp[up.ingredientId] || 0) + 1;
             tm.topUp = up;
@@ -459,6 +467,60 @@ var Solver = (function () {
       var wasteRatio = freshBought ? freshLeft / freshBought : 0;
 
       var methodCount = Object.keys(methods).length;
+
+      // ⚠️ 味型多样性 —— `flavor` 这个字段一直在数据里,**从来没被用过**。
+      //    后果是排出「咖喱鸡土豆焖饭 + 日式咖喱 + 泰式椰汁鸡汤」这种三顿咖喱味的组合:
+      //    做法各不相同(焖饭/炒/煮),打分上看着很多样,可吃起来是同一个味。
+      //    做法管的是「你手上干什么」,味型管的是「嘴里什么滋味」,不能互相顶替。
+      var flavors = {};
+      chosen.forEach(function (c) {
+        ((c.recipe.flavor || [])[0] ? [c.recipe.flavor[0]] : []).forEach(function (f) {
+          flavors[f] = (flavors[f] || 0) + 1;
+        });
+      });
+      var flavorCount = Object.keys(flavors).length;
+
+      // ⚠️ 主料重复 —— **和味型/做法是三件事**,前两项都拦不住它。
+      //    实测 100 轮里有 42 轮四顿中有三顿以上用同一样主料,17 轮四顿全是同一类:
+      //      轮9   鸡胸肉 / 鸡胸肉 / 鸡胸肉 / 鸡胸肉
+      //      轮15  去骨鸡腿 / 去骨鸡腿 / 去骨鸡腿 / 虾仁
+      //    做法各不相同(空炸/焖饭/白灼/煮)、味型也不同(孜然/咸鲜/清淡/咖喱),
+      //    两项多样性分都拿满 —— 可周末两天四顿全在啃鸡胸,这是受刑不是吃饭。
+      //
+      // ⚠️ 但这不是 bug,是打分**主动追求**的结果:同一样主料浪费低、采购样数少,
+      //    (1 - wasteRatio) * 100 和 untouched * 25 都在奖励它。所以不能一刀切禁止,
+      //    否则等于用多样性去买浪费 —— 那是拿一个真问题换另一个真问题。
+      //
+      // 只罚**第三顿起**:一包鸡胸分两顿吃完是聪明,第三顿开始才是腻。
+      //
+      // 权重扫过一遍,60 是拐点(≥3 顿同主料的轮数 / 浪费中位 / 采购中位):
+      //      0 → 42%  22%  11 样
+      //     20 → 28%  22%  11 样
+      //     40 → 19%  23%  12 样
+      //     60 → 10%  23%  12 样      ← 取这个
+      //    100 →  6%  23%  12 样
+      // 再往上买不到什么了:60 之后曲线已经平,而热量超标从 15% 爬到 20%
+      // (被迫从次优候选里选,那些菜本身更重)。
+      //
+      // ⚠️ 这一项只按**具体食材**算,不按类别。所以「鸡胸 + 鸡腿 + 琵琶腿 + 鸡翅」
+      //    仍然拿不到惩罚 —— 实测「四顿全是禽肉」还有 12%。
+      //    要不要连这个也算重复,得你吃过一轮才知道:四顿不同做法的鸡,
+      //    到底是「还行」还是「又是鸡」。记在 PROGRESS.md 里,不靠猜。
+      var mains = {};
+      chosen.forEach(function (c) {
+        var b = null;
+        (c.variant.ingredients || []).forEach(function (it) {
+          if (it.role !== 'main') return;
+          var i = ing(it.ids[0]);
+          if (!i || !i.per100g || !i.per100g.protein || i.per100g.protein < 10) return;
+          if (!b || i.per100g.protein > b.d) b = { id: i.id, d: i.per100g.protein };
+        });
+        if (b) mains[b.id] = (mains[b.id] || 0) + 1;
+      });
+      var mainRepeat = Object.keys(mains).reduce(function (a, k) {
+        return a + Math.max(0, mains[k] - 2);
+      }, 0);
+
       var missing = chosen.reduce(function (s, c) { return s + c.missing; }, 0);
       // 完全没被碰过的食材单独重罚 —— 买了一整包一口没吃,比每样剩一点糟得多
       var untouched = Object.keys(budget).filter(function (id) {
@@ -518,6 +580,8 @@ var Solver = (function () {
 
       var score = (1 - wasteRatio) * 100
                 + Math.min(methodCount, servings) * 8
+                + Math.min(flavorCount, servings) * 8
+                - mainRepeat * 60       // 第三顿起的同一样主料
                 - missing * 4
                 - untouched * 25
                 - urgentLeft * 0.15

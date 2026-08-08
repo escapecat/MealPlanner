@@ -78,6 +78,21 @@ var Meal = (function () {
     if ((variant.potsUsed || 1) > 1) return false;
     if (nutrition.veg < 100) return false;
     if (nutrition.kcal > SIDE_MAX_KCAL) return false;
+    // 配菜位上不能是荤菜。
+    //
+    // ⚠️ 光卡蛋白拦不住:空炸黑椒牛肉粒 150g 牛瘦肉 = 32g 蛋白,
+    //    正好压在门槛(59×0.6=35g)下面,菜又有 150g —— 于是它被当成
+    //    「配的那份青菜」挂到咸鱼蒸肉饼后面,一顿变成两道肉。
+    //    今天全库 582 个变体只有它一个漏过来,但判据错了就是错了:
+    //    配菜位的意思是「再烫个青菜」,该看的是**有没有荤主料**,不是蛋白数字。
+    var MEATY = ['畜肉', '禽肉', '水产', '加工肉', '内脏', '蛋'];
+    var hasMeat = (variant.ingredients || []).some(function (it) {
+      if (it.role !== 'main' && it.role !== 'side') return false;
+      var i = (typeof Catalog !== 'undefined') ? Catalog.ingredient(it.ids[0]) : null;
+      return !!i && MEATY.indexOf(i.category) >= 0;
+    });
+    if (hasMeat) return false;
+
     // 蛋白高的不该当配菜 —— 那是另一道主菜,会把一顿变成两道正经菜
     return nutrition.protein < proteinFloor(target);
   }
