@@ -480,6 +480,30 @@ var Solver = (function () {
         //    「鸡胸 150g → 220g」比「鸡胸 150g + 一罐金枪鱼」自然得多:
         //    不用多买一样、不用多做一步。反过来做的话,先补了就没必要加量,
         //    结果每顿都挂着一样额外的东西。
+        // ⚠️ **缩份量必须排在加量之前**,这是整套顺序的关键。
+        //    portionBoost 里有一条「热量没空间就不加」(room = target*1.25 - kcal),
+        //    所以一顿已经 1117 kcal 的紫菜包饭是加不动量的 —— 蛋白只有 40g 也加不了。
+        //    先把 250g 米饭归一化成 90g(省 554 kcal / 只少 12g 蛋白),
+        //    腾出来的空间正好让鸡胸把蛋白补回去,130 kcal 换 12g。**净赚 420 kcal。**
+        //    反过来先加量的话:加不动 → 只能靠补充项 → 每顿都挂一样额外的东西,
+        //    热量还是超着。
+        if (typeof Nutrition !== 'undefined' && opts.target) {
+          for (var si = 0; si < chosen.length; si++) {
+            var sm = chosen[si];
+            var sc = Nutrition.portionScale(sm.variant, sm.nutrition, opts.target);
+            if (!sc) continue;
+            sm.scale = sc;
+            sm.nutrition = Object.assign({}, sm.nutrition, {
+              kcal: sm.nutrition.kcal - sc.kcal,
+              protein: sm.nutrition.protein - sc.protein,
+            });
+            // 少用的那部分还回预算 —— 不然采购清单还按原量买
+            sc.cuts.forEach(function (cut) {
+              if (left[cut.ingredientId] != null) left[cut.ingredientId] += cut.removed;
+            });
+          }
+        }
+
         if (typeof Nutrition !== 'undefined' && opts.target) {
           for (var bi = 0; bi < chosen.length; bi++) {
             var bm = chosen[bi];
@@ -728,6 +752,16 @@ var Solver = (function () {
       });
       // 主料加量的部分也要进清单 —— 页面写「鸡胸 150→220g」,
       // 清单还按 150g 买的话,做到一半就不够了。
+      // 缩掉的量要从清单里减掉 —— 页面写着「米饭 250→90g」,
+      // 清单却还按 250g 买的话,那一刀等于没砍,还多买了 160g 米。
+      if (c.scale) {
+        c.scale.cuts.forEach(function (cut) {
+          if (need[cut.ingredientId] != null) {
+            need[cut.ingredientId] = Math.max(0, need[cut.ingredientId] - cut.removed);
+          }
+        });
+      }
+
       if (c.boost) {
         need[c.boost.ingredientId] = (need[c.boost.ingredientId] || 0) + c.boost.added;
       }

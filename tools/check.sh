@@ -36,7 +36,7 @@ done
 #   boot    —— **白屏**。node --check 只查语法,运行时抛异常照样过;
 #              而页面一片空白时,除了控制台没有任何提示。这一条按 index.html
 #              的顺序真加载一遍再挨个挂载页面。
-for t in tools/jstest/staples.js tools/jstest/modal.js tools/jstest/flow.js tools/jstest/pinyin.js tools/jstest/timing.js tools/jstest/notes.js tools/jstest/recipebook.js tools/jstest/boot.js tools/jstest/settings.js tools/jstest/meal.js tools/jstest/snack.js; do
+for t in tools/jstest/staples.js tools/jstest/modal.js tools/jstest/flow.js tools/jstest/pinyin.js tools/jstest/timing.js tools/jstest/notes.js tools/jstest/recipebook.js tools/jstest/boot.js tools/jstest/settings.js tools/jstest/meal.js tools/jstest/snack.js tools/jstest/portion.js; do
   [ -e "$t" ] || continue
   if ! node "$t" >/dev/null 2>&1; then
     echo "✗ 回归测试没过: $t"

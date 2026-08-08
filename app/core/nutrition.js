@@ -152,6 +152,104 @@ var Nutrition = (function () {
   }
 
   /**
+   * 热量超标就**先把份量缩回来** —— 这才是治本的那一步。
+   *
+   * ⚠️ Nutrition.shortfall 里那条超标扣分**治不了本**,注释里早写了:
+   *    权重从 0.6 加到 3.0,超宽容带的顿数只从 18% 降到 11%,浪费反而涨了。
+   *    因为打分只能在候选之间挑,挑不出库里没有的东西 —— 而超标的不是
+   *    「加多了」,是**那道菜本身就那么大份**。
+   *
+   * ⚠️ 缩哪一样不能乱来。实测 20 顿超标的,热量大头高度集中,而且
+   *    **全是每 100 kcal 给蛋白最少的那几样**:
+   *      韩式紫菜包饭 1303 → 大米 250g = 865 kcal(66%)  每100kcal 给蛋白 2.1g
+   *      牛丼         1304 → 大米 200g = 692 kcal(53%)  2.1g
+   *      咖喱乌冬     1170 → 乌冬 200g = 540 kcal(46%)  2.2g
+   *      空炸五花肉片 1458 → 猪五花 150g = 762 kcal(52%) **1.8g**
+   *    而这些顿的蛋白本来就够(55-68g,目标 59)。
+   *    所以规则是:**按「每 100 kcal 能给多少蛋白」从低往高缩**,
+   *    先动米面和肥肉,青菜和瘦肉最后动 —— 缩的是热量,不是营养。
+   *
+   * ⚠️ 主食有个现成的标准,而且**一直自相矛盾**:
+   *    app 自己配饭时用 STAPLE_GRAMS = 90g(占目标热量 37%),
+   *    可菜谱自带主食时就照单全收 250g 大米。同一件事两个标准。
+   *    这里把它统一成一个:不管饭是谁加的,都按你的目标算一份。
+   *
+   * 返回和 portionBoost 同形状,solver / 采购清单 / UI 三处照同样的方式接。
+   */
+  var STAPLE_KCAL_SHARE = 311 / 832;   // 90g 大米 ÷ 减脂男性单顿目标 —— 不是新数,是把已有默认值写成比例
+
+  function portionScale(variant, n, target) {
+    if (!variant || !n || !target || !target.kcal) return null;
+
+    var cuts = [], saved = 0;
+
+    // 第一刀:**主食无条件归一化**,不管这顿超没超标。
+    //
+    // ⚠️ 这才是那个自相矛盾的地方。第一版只在超标时才缩,于是紫菜包饭
+    //    从 1117 缩到 1044 就停手 —— 刚好压进宽容带,可米饭还是 250g,
+    //    毛病一点没治。宽容带是「多吃一点没关系」,不是「250g 大米是对的」。
+    //    250g 大米 ≈ 550g 米饭,一个人一顿吃这么多饭,不是减脂不减脂的问题。
+    (variant.ingredients || []).forEach(function (it) {
+      if (it.role !== 'staple') return;
+      var i = ing(it.ids[0]);
+      if (!i || !i.per100g || !i.per100g.kcal) return;
+      var g = gramsOf(it);
+      if (g == null || g <= 0) return;
+      var want = Math.round(target.kcal * STAPLE_KCAL_SHARE / i.per100g.kcal * 100 / 10) * 10;
+      if (want >= g - 10) return;                // 本来就差不多,不动
+      cuts.push({ ingredientId: i.id, name: it.names[0], from: g, to: want,
+                  removed: g - want, kcal: Math.round((g - want) * i.per100g.kcal / 100),
+                  protein: Math.round((g - want) * (i.per100g.protein || 0) / 100) });
+      saved += (g - want) * i.per100g.kcal / 100;
+    });
+
+    // 第二刀:还超着宽容带,就动**每 100 kcal 给蛋白最少**的那几样。
+    var over = (n.kcal - saved) - target.kcal * 1.25;
+    if (over > 0) {
+      var parts = [];
+      (variant.ingredients || []).forEach(function (it) {
+        if (it.role === 'staple' || it.role === 'aromatic') return;   // 主食已处理;香料省不下几卡还改味道
+        var i = ing(it.ids[0]);
+        if (!i || !i.per100g || !i.per100g.kcal) return;
+        if (i.countsAsVeg) return;               // 蔬菜热量本来就低,缩了只是减蔬菜量,反着来
+        var g = gramsOf(it);
+        if (g == null || g <= 0) return;
+        var floor = Math.round(g * 0.6);         // 再少就不是这道菜了
+        if (floor >= g - 10) return;
+        parts.push({ id: i.id, name: it.names[0], from: g, floor: floor,
+                     kd: i.per100g.kcal, pd: i.per100g.protein || 0,
+                     yield_: (i.per100g.protein || 0) / i.per100g.kcal * 100 });
+      });
+      parts.sort(function (a, b) { return a.yield_ - b.yield_; });
+
+      // ⚠️ **不能在这儿加「蛋白不许跌破目标」的护栏**,虽然听起来天经地义。
+      //    第一版加了,结果一道都缩不动:这一步跑在**加量之前**,那时候
+      //    紫菜包饭蛋白才 40g、目标 59g,护栏一算「已经欠 19g」就全额否决,
+      //    连 865 kcal 的米饭都不让动。
+      //    顺序本身就是答案:**先缩热量腾空间,再补蛋白**。
+      //    米饭每 100 kcal 只给 2.1g 蛋白,砍 160g 少 550 kcal / 少 12g 蛋白,
+      //    这 12g 用鸡胸补回来只要 130 kcal —— 净赚 420 kcal。
+      //    护栏想守的(最后蛋白要够)归后面的加量/补充项管。
+      for (var k = 0; k < parts.length && over > 0; k++) {
+        var p = parts[k];
+        var cut = Math.round(Math.min(p.from - p.floor, Math.ceil(over / p.kd * 100)) / 10) * 10;
+        if (cut < 20) continue;
+        cuts.push({ ingredientId: p.id, name: p.name, from: p.from, to: p.from - cut,
+                    removed: cut, kcal: Math.round(cut * p.kd / 100),
+                    protein: Math.round(cut * p.pd / 100) });
+        over -= cut * p.kd / 100;
+      }
+    }
+
+    if (!cuts.length) return null;
+    return {
+      cuts: cuts,
+      kcal: cuts.reduce(function (a, c) { return a + c.kcal; }, 0),
+      protein: cuts.reduce(function (a, c) { return a + c.protein; }, 0),
+    };
+  }
+
+  /**
    * 蛋白不够就补一份 —— **和「不带主食就配碗饭」是同一套逻辑**。
    *
    * ⚠️ 为什么必须有这个:减脂目标算出来单顿要 59g 蛋白,
@@ -253,7 +351,7 @@ var Nutrition = (function () {
     DEFAULT_STAPLE: DEFAULT_STAPLE, STAPLE_GRAMS: STAPLE_GRAMS,
     gramsOf: gramsOf, ofVariant: ofVariant, ofMeal: ofMeal, shortfall: shortfall,
     PROTEIN_TOPUPS: PROTEIN_TOPUPS, proteinTopUp: proteinTopUp,
-    portionBoost: portionBoost,
+    portionBoost: portionBoost, portionScale: portionScale,
   };
 })();
 
