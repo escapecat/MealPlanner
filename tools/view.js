@@ -140,7 +140,18 @@ function walk(el, d, lines) {
 
 var page = process.argv[2] || 'rounds';
 if (page === 'recipes')  { mem[NS + 'tab'] = 'recipes'; }
-if (page === 'pantry')   { mem[NS + 'tab'] = 'pantry'; }
+if (page === 'pantry') {
+  mem[NS + 'tab'] = 'pantry';
+  // 空状态看不出布局问题 —— 塞几样真库存进去
+  mem[NS + 'pantryItems'] = JSON.stringify([
+    { id: 'p1', ingredientId: 'chicken_breast', amount: 500, unit: 'g',
+      addedAt: '2026-08-06T00:00:00.000Z', source: 'manual' },
+    { id: 'p2', ingredientId: 'spinach', amount: 300, unit: 'g',
+      addedAt: '2026-08-07T00:00:00.000Z', source: 'manual' },
+    { id: 'p3', ingredientId: 'egg', amount: 500, unit: 'g',
+      addedAt: '2026-08-01T00:00:00.000Z', source: 'manual' },
+  ]);
+}
 if (page === 'settings') { mem[NS + 'tab'] = 'settings'; }
 
 // 排一轮出来,不然计划页是空的 —— 空状态看不出真实密度

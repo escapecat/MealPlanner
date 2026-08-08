@@ -66,40 +66,25 @@ var PantryUI = (function () {
     saveItems(list);
   }
 
+  /**
+   * 冰箱里的一样东西。
+   *
+   * ⚠️ 改版前是**一张 card + 四个整宽按钮**(改数量 / 吃完了 / 扔了 / 记错了)。
+   *    十样库存就是四十个按钮,而且四个长得一模一样 —— 一件事上摆四个
+   *    同等份量的按钮等于没有主次:每次都得读一遍才知道点哪个。
+   *
+   *    最常做的是「改数量」(吃了一半、称了一下),所以它成了**整行**;
+   *    剩下三个收进「···」。Modal.pick 本来就是干这个的。
+   */
   function itemCard(it) {
     var ing = Catalog.ingredient(it.ingredientId);
     var d = daysLeft(it);
     var cls = urgencyClass(d);
-    var box = h('div', { class: 'card', style: 'padding:12px' });
+    var name = ing ? ing.name : it.ingredientId;
 
-    var head = h('div', { style: 'display:flex;align-items:baseline;gap:8px;flex-wrap:wrap' });
-    head.appendChild(h('strong', {}, [ing ? ing.name : it.ingredientId]));
-    head.appendChild(h('span', { style: 'font-size:15px' },
-      [Math.round(it.amount) + (it.unit || 'g')]));
-    if (d != null) {
-      head.appendChild(h('span', {
-        class: 'conf conf-' + (cls === 'danger' ? 'U' : cls === 'warn' ? 'C' : 'B'),
-      }, [d < 0 ? '过期 ' + (-d) + ' 天' : d === 0 ? '今天到期' : d + ' 天']));
-    }
-    box.appendChild(head);
-    box.appendChild(h('div', { class: 'hint' }, [
-      ({ fridge: '冷藏', freezer: '冷冻', pantry: '常温' }[it.location] || it.location) +
-      ' · 买于 ' + it.addedAt.slice(5, 10) +
-      (it.openedAt ? ' · 已开封' : ''),
-    ]));
-
-    var row = h('div', { style: 'display:flex;gap:8px;margin-top:12px;flex-wrap:wrap' });
-    function act(label, fn, danger) {
-      return h('button', {
-        class: 'btn ghost',
-        style: 'width:auto;padding:8px 12px;font-size:13px' +
-               (danger ? ';color:var(--danger);border-color:var(--danger)' : ''),
-        onclick: fn,
-      }, [label]);
-    }
-    row.appendChild(act('改数量', function () {
+    function askAmount() {
       Modal.ask({
-        title: (ing ? ing.name : '') + ' 还剩多少?',
+        title: name + ' 还剩多少?',
         hint: '称一下最准;估个数也比不记强。',
         type: 'number', value: Math.round(it.amount), suffix: it.unit || 'g',
         presets: [
@@ -111,15 +96,14 @@ var PantryUI = (function () {
         var n = parseFloat(v);
         if (!isNaN(n)) { setAmount(it.id, n); render(); }
       });
-    }));
-    row.appendChild(act('吃完了', function () { removeItem(it.id); render(); }));
+    }
 
     // ⚠️ 「扔了」写进 wasteLog,那是诊断统计唯一的真实数据源。
     //    所以必须另给一个「记错了」—— 否则用户拿「扔了」当通用删除键,
     //    系统就会以为他真扔了食物,「什么东西总是剩」的结论跟着变成垃圾。
-    row.appendChild(act('扔了', function () {
+    function askWaste() {
       Modal.ask({
-        title: '扔了多少 ' + (ing ? ing.name : '') + '?',
+        title: '扔了多少 ' + name + '?',
         hint: '记下来才能看出什么东西总是剩 —— 这是唯一没法自动观测的一步。',
         type: 'number', value: Math.round(it.amount), suffix: it.unit || 'g',
         ok: '记一笔浪费',
@@ -136,15 +120,56 @@ var PantryUI = (function () {
         else setAmount(it.id, it.amount - n);
         render();
       });
-    }, true));
-    row.appendChild(act('记错了', function () {
-      Modal.confirm({
-        title: '直接删掉这条?',
-        body: '不算浪费、也不算吃掉 —— 就当没记过。浪费统计不会受影响。',
-        ok: '删掉', danger: true,
-      }).then(function (ok) { if (ok) { removeItem(it.id); render(); } });
-    }));
-    box.appendChild(row);
+    }
+
+    var box = h('div', { class: 'list-row', onclick: askAmount });
+    box.appendChild(h('div', { class: 'body' }, [
+      h('div', { class: 'ttl' }, [
+        name,
+        h('span', { style: 'font-weight:400;margin-left:8px' },
+          [Math.round(it.amount) + (it.unit || 'g')]),
+      ]),
+      h('div', { class: 'sub2' }, [
+        // ⚠️ 兜底不能少:location 缺失时原来直接把 undefined 印在界面上。
+        //    老数据、导入进来的数据都可能没这个字段,而「undefined」是
+        //    最糟的失败方式 —— 看着像程序坏了,其实只是少一个字段。
+        ({ fridge: '冷藏', freezer: '冷冻', pantry: '常温' }[it.location] || '存着') +
+        ' · 买于 ' + it.addedAt.slice(5, 10) +
+        (it.openedAt ? ' · 已开封' : ''),
+      ]),
+    ]));
+    if (d != null) {
+      box.appendChild(h('span', {
+        class: 'st',
+        style: cls === 'danger' ? 'background:var(--danger-dim);color:var(--danger)'
+             : cls === 'warn' ? 'background:var(--warn-dim);color:var(--warn)' : '',
+      }, [d < 0 ? '过期 ' + (-d) + ' 天' : d === 0 ? '今天到期' : d + ' 天']));
+    }
+    box.appendChild(h('span', {
+      class: 'act',
+      onclick: function (e) {
+        e.stopPropagation();           // 别把「打开菜单」变成「改数量」
+        Modal.pick({
+          title: name + ' ' + Math.round(it.amount) + (it.unit || 'g'),
+          options: [
+            { value: 'eaten', label: '吃完了', hint: '从冰箱去掉,不算浪费' },
+            { value: 'waste', label: '扔了',   hint: '记一笔浪费 —— 统计只认这里的数' },
+            { value: 'wrong', label: '记错了', hint: '当没记过,不影响浪费统计',
+              danger: true },
+          ],
+        }).then(function (v) {
+          if (v === 'eaten') { removeItem(it.id); render(); }
+          else if (v === 'waste') askWaste();
+          else if (v === 'wrong') {
+            Modal.confirm({
+              title: '直接删掉这条?',
+              body: '不算浪费、也不算吃掉 —— 就当没记过。浪费统计不会受影响。',
+              ok: '删掉', danger: true,
+            }).then(function (ok) { if (ok) { removeItem(it.id); render(); } });
+          }
+        });
+      },
+    }, ['···']));
     return box;
   }
 
@@ -204,7 +229,9 @@ var PantryUI = (function () {
       var rows = its.filter(function (x) { return g.test(daysLeft(x)); });
       if (!rows.length) return;
       w.appendChild(h('h2', {}, [g.label + ' · ' + rows.length]));
-      rows.forEach(function (x) { w.appendChild(itemCard(x)); });
+      var list = h('div', { class: 'list' });
+      rows.forEach(function (x) { list.appendChild(itemCard(x)); });
+      w.appendChild(list);
     });
 
     var wl = Store.get('wasteLog', []) || [];
