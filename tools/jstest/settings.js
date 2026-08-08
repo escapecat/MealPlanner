@@ -81,5 +81,16 @@ var pots = { equipment: ['炒锅', '汤锅'] };
 var withPots = Catalog.countAvailable(Object.assign({}, BASE, pots)).dishes;
 ok(withPots > 340, '只有炒锅+汤锅时可做 ' + withPots + ' 道(补矩阵前是 306)');
 
+
+// 电压力锅是**省时间的工具,不是必需品** —— 炖焖煮普通锅都能干,只是慢。
+// ⚠️ 但替代之后库里的时间就偏乐观了(那是按压力锅估的),
+//    所以 note 必须把这条说出来。测试钉住「不许悄悄替代」。
+ok(Equipment.satisfy('电压力锅', ['汤锅'], '炖').ok, '没有压力锅,汤锅也能炖');
+var ps = Equipment.satisfy('电压力锅', ['汤锅'], '炖');
+ok(!!ps.note && ps.note.indexOf('时间') >= 0,
+   '而且说明里点出了「时间要长得多」—— 不能悄悄替代');
+ok(!Equipment.satisfy('电压力锅', ['不粘锅'], '炖').ok,
+   '不粘锅不给顶压力锅(浅、涂层不耐久炖)');
+
 console.log(fails ? '\n' + fails + ' 条挂了' : '\n全过');
 process.exit(fails ? 1 : 0);
