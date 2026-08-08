@@ -289,6 +289,20 @@ var RoundsUI = (function () {
                  missing: c.missing, cooked: false,
                  // 配菜:蔬菜不够的那顿配一道简单青菜。存 id + 档位就够,
                  // 食材现查(和主菜一样,派生数据不存两份)。
+                 // 份量缩放:热量超标时把米面/肥肉缩回来。
+                 // ⚠️ 存结论(缩了哪样、从多少到多少),不存重算过的营养 ——
+                 //    页面上的 nu 是从菜谱重算的原始值,不减掉这一刀的话
+                 //    会显示「米饭 250g · 1303 kcal」,而采购清单按 90g 买。
+                 //    **页面和清单对不上**,而且是页面在骗人。
+                 scale: c.scale ? { cuts: c.scale.cuts.map(function (x) {
+                                      return { ingredientId: x.ingredientId, name: x.name,
+                                               from: x.from, to: x.to, removed: x.removed,
+                                               kcal: x.kcal, protein: x.protein };
+                                    }), kcal: c.scale.kcal, protein: c.scale.protein } : null,
+                 // app 自动配的那份主食(轮换过的)—— 不存的话页面重算又变回白米
+                 staple: (c.nutrition && c.nutrition.staple) ? {
+                   ingredientId: c.nutrition.staple.ingredientId,
+                   name: c.nutrition.staple.name, grams: c.nutrition.staple.grams } : null,
                  // 主料加量:蛋白不够时先加它,比另外补一样自然
                  boost: c.boost ? { ingredientId: c.boost.ingredientId, name: c.boost.name,
                                     from: c.boost.from, to: c.boost.to,
@@ -882,6 +896,15 @@ var RoundsUI = (function () {
     // 主料加量 —— 直接改那一样的克数,比另外挂一样东西自然。
     // ⚠️ 必须显示原值:「鸡胸 150→220g」你才知道这是按你的目标调过的,
     //    只写 220g 的话,下次你翻菜谱页看到 150g 会以为哪儿错了。
+    // 份量缩回来了 —— 和加量一样必须显示原值,否则你翻菜谱页看到 250g 会以为哪儿错了。
+    if (m.scale && m.scale.cuts && m.scale.cuts.length) {
+      card.appendChild(h('div', { class: 'hint', style: 'margin-top:6px;color:var(--accent)' }, [
+        '按你的热量目标缩了份量:**' +
+        m.scale.cuts.map(function (x) { return x.name + ' ' + x.from + 'g → ' + x.to + 'g'; })
+          .join(' · ') + '**(−' + m.scale.kcal + ' kcal)',
+      ]));
+    }
+
     if (m.boost) {
       card.appendChild(h('div', { class: 'hint', style: 'margin-top:6px;color:var(--accent)' }, [
         '按你的蛋白目标加了量:**' + m.boost.name + ' ' + m.boost.from + 'g → ' +
@@ -891,8 +914,16 @@ var RoundsUI = (function () {
 
     if (nu) {
       var sideNu = m.side ? Nutrition.ofVariant((variantOf(m.side) || {}).variant || {}) : null;
-      var upK = (m.topUp ? m.topUp.kcal : 0) + (m.boost ? m.boost.kcal : 0);
-      var upP = (m.topUp ? m.topUp.protein : 0) + (m.boost ? m.boost.protein : 0);
+      // ⚠️ nu 是从菜谱**重算**的原始值,所以加量/补充项/配菜要加回去(这是对的),
+      //    但**缩掉的那部分必须减掉**,轮换过的主食也要换过来 ——
+      //    少了这两步,页面显示 1303 kcal 而清单按 749 kcal 的量买。
+      if (m.staple && nu.staple && m.staple.ingredientId !== nu.staple.ingredientId) {
+        nu = Nutrition.swapStaple(nu, m.staple.ingredientId, m.staple.grams);
+      }
+      var upK = (m.topUp ? m.topUp.kcal : 0) + (m.boost ? m.boost.kcal : 0)
+              - (m.scale ? m.scale.kcal : 0);
+      var upP = (m.topUp ? m.topUp.protein : 0) + (m.boost ? m.boost.protein : 0)
+              - (m.scale ? m.scale.protein : 0);
       card.appendChild(h('div', { class: 'hint', style: 'margin-top:6px' }, [
         '约 ' + (nu.kcal + (sideNu ? sideNu.kcal : 0) + upK) + ' kcal · 蛋白 ' +
         (nu.protein + (sideNu ? sideNu.protein : 0) + upP) + 'g · 蔬菜 ' +

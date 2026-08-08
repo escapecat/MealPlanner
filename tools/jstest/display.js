@@ -1,0 +1,91 @@
+// 页面显示的数字,和求解器实际按什么排的、清单实际按什么买的,必须是同一个数。
+//
+// ⚠️ 这一条以前**完全没人测**,而它已经出过一次:
+//    portionScale 加进求解器之后,rounds.js 里 `scale` 出现 0 次 ——
+//    求解器按 90g 米排、清单按 90g 买,页面却重算出「米饭 250g · 1303 kcal」。
+//    页面不报错、清单不报错,只是两边说的不是一回事,而**页面在骗人**。
+//    主食轮换同样:页面 ofMeal() 重算时又变回白米。
+//
+// 这类故障的形状是固定的:求解器算出新东西 → 忘了存 → 页面重算 → 显示旧值。
+// 所以这里测的不是某个数,是「**求解器产出的每一项调整,页面都得知道**」。
+var path = require('path');
+var APP = path.join(__dirname, '..', '..', 'app');
+global.INGREDIENTS = require(path.join(APP, 'data/ingredients.js'));
+global.RECIPES = require(path.join(APP, 'data/recipes.js'));
+global.PACKAGES = require(path.join(APP, 'data/packages.js'));
+var db = { staples: [{ id: 'rice' }, { id: 'brown_rice' }, { id: 'sweet_potato' }],
+           staplesMigrated: true, staplesConfirmed: true };
+global.Store = { get: function (k, f) { return db[k] !== undefined ? db[k] : (f === undefined ? null : f); },
+                 set: function (k, v) { db[k] = v; } };
+global.Equipment = require(path.join(APP, 'core/equipment.js'));
+global.Timing = require(path.join(APP, 'core/timing.js'));
+global.Catalog = require(path.join(APP, 'core/catalog.js'));
+global.Packaging = require(path.join(APP, 'core/packaging.js'));
+global.Pantry = require(path.join(APP, 'core/pantry.js'));
+global.Nutrition = require(path.join(APP, 'core/nutrition.js'));
+global.Meal = require(path.join(APP, 'core/meal.js'));
+var Profile = require(path.join(APP, 'core/profile.js'));
+var Solver = require(path.join(APP, 'core/solver.js'));
+
+var fail = 0;
+function ok(c, m) { if (!c) { console.log('  FAIL ' + m); fail++; } }
+var daily = Profile.dailyTargets({ sex: 'male', age: 30, heightCm: 175, weightKg: 70,
+                                   activity: 'light', goal: 'cut' });
+var T = Profile.perPlannedMeal(daily, 'light');
+var CONS = { equipment: ['炒锅', '空气炸锅', '电饭煲'], maxSpicy: 1, maxActiveMinutes: 45,
+             maxDifficulty: 3, maxIdleWait: 60, allowOvernight: false, blacklist: [] };
+
+// rounds.js 存下来的字段(和 generate() 里那段保持一致)。
+// 少存一样,下面的重算就会和求解器对不上 —— 这正是要抓的。
+function persist(c) {
+  return {
+    scale: c.scale ? { cuts: c.scale.cuts, kcal: c.scale.kcal, protein: c.scale.protein } : null,
+    staple: (c.nutrition && c.nutrition.staple) ? c.nutrition.staple : null,
+    boost: c.boost, topUp: c.topUp, side: c.side, variant: c.variant,
+  };
+}
+
+// 页面的重算路径(rounds.js:854 起那几行的等价物)
+function redisplay(m) {
+  var nu = Nutrition.ofMeal(m.variant);
+  if (m.staple && nu.staple && m.staple.ingredientId !== nu.staple.ingredientId) {
+    nu = Nutrition.swapStaple(nu, m.staple.ingredientId, m.staple.grams);
+  }
+  var sideNu = (m.side && m.side._cand) ? Nutrition.ofVariant(m.side._cand.variant) : null;
+  var k = (m.topUp ? m.topUp.kcal : 0) + (m.boost ? m.boost.kcal : 0) - (m.scale ? m.scale.kcal : 0);
+  var p = (m.topUp ? m.topUp.protein : 0) + (m.boost ? m.boost.protein : 0)
+        - (m.scale ? m.scale.protein : 0);
+  return { kcal: nu.kcal + (sideNu ? sideNu.kcal : 0) + k,
+           protein: nu.protein + (sideNu ? sideNu.protein : 0) + p };
+}
+
+var checked = 0, worstK = 0, worstP = 0, worstWhat = '', sawScale = 0, sawSwap = 0;
+for (var s = 0; s < 30; s++) {
+  var o = Solver.solve({ servings: 4, constraints: CONS, stock: {}, mustUse: [],
+                         target: T, recentRecipeIds: {}, seed: s });
+  if (!o.ok) continue;
+  o.stage2.chosen.forEach(function (c) {
+    if (!c.nutrition) return;
+    var shown = redisplay(persist(c));
+    checked++;
+    if (c.scale) sawScale++;
+    if (c.nutrition.staple && c.nutrition.staple.ingredientId !== 'rice') sawSwap++;
+    var dk = Math.abs(shown.kcal - c.nutrition.kcal);
+    var dp = Math.abs(shown.protein - c.nutrition.protein);
+    if (dk > worstK) { worstK = dk; worstWhat = c.recipe.name; }
+    if (dp > worstP) worstP = dp;
+  });
+}
+
+// 允许几卡的四舍五入误差,但不允许量级差异。
+ok(worstK <= 5, '页面算出来的热量和求解器差 ' + worstK + ' kcal(' + worstWhat + ')');
+ok(worstP <= 3, '页面算出来的蛋白和求解器差 ' + worstP + 'g');
+
+// 前提:样本里得真的出现过缩放和换主食,否则上面两条是空过。
+ok(sawScale > 0, '30 轮里一顿都没缩过份量 —— 这条测试等于没测');
+ok(sawSwap > 0, '30 轮里一顿都没换过主食 —— 这条测试等于没测');
+
+console.log(fail ? '页面/求解器对账 ' + fail + ' 处不对'
+                 : '  页面/求解器对账 ok(' + checked + ' 顿,缩过 ' + sawScale
+                   + ' 顿,换过主食 ' + sawSwap + ' 顿,最大差 ' + worstK + ' kcal)');
+process.exit(fail ? 1 : 0);
