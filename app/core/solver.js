@@ -50,7 +50,22 @@ var Solver = (function () {
     var usage = {};
     var pool = [];
     RECIPES.forEach(function (r) {
-      if (r.type === 'prep') return;
+      // ⚠️ `snack` 是 2026-08-08 新加的 type 值,意思是「能做,但不是一顿饭」。
+      //    100 顿模拟里**蓝莓玛芬是被选中次数第三多的主菜**(14/400 顿),
+      //    还被配上凉拌黄瓜和一份北豆腐 —— 玛芬是下午茶,不是晚饭。
+      //    它凭什么赢:930 kcal、蛋白 36g **刚好压过主菜门槛 35g**(靠 2 个鸡蛋)、
+      //    面粉是常备不算浪费、动手才 20 分。每一项打分都很漂亮,可它不是一顿饭。
+      //
+      // ⚠️ 试过两种「推导出来」的判据,**都不行**,和当初「面粉≈和面」是同一个错:
+      //      蔬菜0g + 主料无肉 → 79 道,里面有红烧肉、麻婆豆腐、水饺、意面
+      //      调料甜且不咸     → 漏掉玛芬(它有盐),误伤韩式辣炒猪肉、炸酱面
+      //    「这是甜点」是菜本身的属性,库里没记就是没记,只能手标,不能猜。
+      //    目前 7 道:甜烧白 · 八宝饭 · 拔丝地瓜 · 香蕉面包 · 英式司康 ·
+      //              蓝莓玛芬 · 泰式芒果糯米饭
+      //
+      // 只在这儿(主菜候选池)排除。菜谱页照常能查能做 —— 你想烤个玛芬是你的事,
+      // 它只是不该被排进「周末四顿」里。
+      if (r.type === 'prep' || r.type === 'snack') return;
       var vs = Catalog.availableVariants(r, cfg);
       if (!vs.length) return;
       pool.push({ recipe: r, variants: vs });
@@ -188,6 +203,44 @@ var Solver = (function () {
    * 给定阶段一选出的食材,挑 N 道菜把它们吃掉。
    * 随机采样 + 打分取最优 —— 一人份搜索空间很小,够用,而且比精巧算法好调试十倍。
    */
+  /**
+   * 选这道菜要**额外拎回来几样东西**,以及每样开了包剩多少。
+   *
+   * ⚠️ 这件事以前打分**完全看不见**,而它恰恰是拿着单子站在货架前最难受的部分:
+   *      韩式紫菜包饭 → 蟹柳 40g(买 100g)· 腌黄萝卜 40g(买 300g)· 海苔 6g
+   *      印尼加多加多 → 天贝 · 绿豆芽 400g 用 80g · 空心菜 300g 用 80g
+   *    实测 1207 条采购项里 46% 剩得比用的多,一轮中位 5 样、最多 11 样。
+   *
+   * ⚠️ 为什么不能在打分那儿用 budget/left 算(试过,权重 0→30 一点变化都没有):
+   *    budget 是**阶段一定死的**,所有候选组合共用同一份,减不动。
+   *    而真正把零碎东西拖进清单的是**被选中的菜自己的配料** —— 阶段一压根没picks它们,
+   *    阶段三照单倒算就进清单了。所以这个数必须挂在**候选**身上,不是挂在剩余量上。
+   *
+   * 只算 main/side 角色:调料归 missingSeasonings 管,别罚两遍。
+   * 已经在采购预算里的不算 —— 那是本来就要买的,顺手用掉反而是好事。
+   */
+  function extraShopping(v, budget, cache) {
+    if (typeof Packaging === 'undefined') return { items: 0, over: 0 };
+    var items = 0, over = 0;
+    (v.ingredients || []).forEach(function (it) {
+      if (it.role !== 'main' && it.role !== 'side') return;
+      var id = it.ids[0];
+      if (budget && budget[id] != null) return;        // 本来就要买
+      var i = ing(id);
+      if (!i || i.tier === 'staple') return;           // 米面调料不进每周清单
+      items++;
+      if (!it.grams) return;
+      if (cache[id] === undefined) cache[id] = Packaging.smallest(id) || null;
+      var o = cache[id];
+      if (!o) return;                                  // 没规格 → 只算「多一样」
+      var total = Math.ceil(it.grams / o.netWeight) * o.netWeight;
+      var rest = total - it.grams;
+      // 剩得比用的多才算 —— 「买 200g 用 180g」不是问题
+      if (rest > it.grams) over += (i.tier === 'fresh') ? 1 : 0.5;
+    });
+    return { items: items, over: over };
+  }
+
   function stage2(stage1Result, servings, opts) {
     opts = opts || {};
     var have = {};
@@ -209,6 +262,7 @@ var Solver = (function () {
     //
     // 配菜(side)不强求 —— 小份的葱姜蒜、一点胡萝卜,后面补进清单就行,
     // 真正贵和占体积的是主料。
+    var pkgCache0 = {};      // 包装规格查缓存 —— 每个候选都要查一遍
     var cands = [];
     var extraNeeded = {};
     stage1Result.pool.forEach(function (e) {
@@ -224,6 +278,8 @@ var Solver = (function () {
         cands.push({ recipe: e.recipe, variant: v, uses: g,
                      nutrition: (typeof Nutrition !== 'undefined')
                                 ? Nutrition.ofMeal(v) : null,
+                     // 选了这道菜,要为它**额外开几包**、每包剩多少
+                     extra: extraShopping(v, budget, pkgCache0),
                      missing: (typeof Pantry !== 'undefined')
                               ? Pantry.missingSeasonings(v).length : 0 });
       });
@@ -261,7 +317,23 @@ var Solver = (function () {
 
     if (typeof Meal !== 'undefined') {
       var mainOK = cands.filter(function (c) { return Meal.canBeMain(c.nutrition, opts.target); });
-      if (mainOK.length >= servings * 3) cands = mainOK;
+      // ⚠️ 这道门槛以前是**全有或全无**:达标的候选不到 servings*3 道就整池放开。
+      //    后果不是「那一顿将就一下」,是**连能达标的那几道也一起被稀释**——
+      //    100 轮里排出 5 次「白灼上海青」当主菜(就是你骂过的「晚饭只吃一个青菜」),
+      //    还有「空炸土豆角 + 空炸杏鲍菇 + 一个鸡蛋 = 蛋白 28g」。
+      //    池子薄的时候恰恰是最该守住门槛的时候,它却正好在那时松手。
+      //
+      //    3 倍是为了多样性(池子太窄会天天吃一样的),但多样性不该拿
+      //    「这顿是不是一顿饭」去换。改成:只要**排得满**就守住门槛,
+      //    真排不满才放开 —— 那时候是「约束太紧」,该去调设置,不是偷偷降标准。
+      //
+      // 门槛取 servings(刚好排得满,不重样)。216 个紧约束场景扫下来:
+      //      2         → 18% 排不出来   蛋白不达标 17/708
+      //      servings  →  0% 排不出来   蛋白不达标 20/864   ← 取这个
+      //      1.5×      →  0% 排不出来   蛋白不达标 26/864
+      //    再往下守不是更严,是**排不出来** —— 池子凑不齐 4 道不重样的。
+      //    「这次没排出来」比「有一顿将就」糟得多:前者你什么都拿不到。
+      if (mainOK.length >= servings) cands = mainOK;
     }
 
 
@@ -458,12 +530,25 @@ var Solver = (function () {
       //    第一版把 335g 鸡蛋和 280g 五花肉一起算进浪费率,得出 60% —— 那个数字没有意义,
       //    因为它把「买了一盒鸡蛋」当成了失败。
       var freshBought = 0, freshLeft = 0, carryLeft = 0;
+
       Object.keys(budget).forEach(function (id) {
         var i = ing(id);
         var isFresh = i && i.tier === 'fresh';
         if (isFresh) { freshBought += budget[id]; freshLeft += left[id]; }
         else { carryLeft += left[id]; }
       });
+
+      // 「为了 40g 蟹柳买一整包」—— 打分以前完全看不见。见 extraShopping() 的注释:
+      // 这个数必须挂在候选身上,拿 budget/left 算是减不动的(试过,权重 0→30 无变化)。
+      var extraItems = 0, extraOver = 0;
+      chosen.forEach(function (c) {
+        if (c.extra) { extraItems += c.extra.items; extraOver += c.extra.over; }
+        if (c.side && c.side._cand && c.side._cand.extra) {
+          extraItems += c.side._cand.extra.items;
+          extraOver += c.side._cand.extra.over;
+        }
+      });
+
       var wasteRatio = freshBought ? freshLeft / freshBought : 0;
 
       var methodCount = Object.keys(methods).length;
@@ -582,6 +667,18 @@ var Solver = (function () {
                 + Math.min(methodCount, servings) * 8
                 + Math.min(flavorCount, servings) * 8
                 - mainRepeat * 60       // 第三顿起的同一样主料
+                // 多拎回来一样东西 / 其中「剩的比用的多」的。权重扫过一遍
+                // (样数中位 · 买一包用一点 · 生鲜浪费 · 100 轮组合数):
+                //    0/0    → 12 样  5 样  29%  64 种
+                //    4/8    → 11 样  4 样  28%  58 种
+                //   12/24   → 10 样  3 样  22%  61 种
+                //   20/40   →  9 样  2 样  18%  65 种   ← 取这个
+                //   30/60   →  8 样  2 样  17%  60 种
+                //   50/100  →  8 样  2 样  17%  60 种(饱和)
+                // 20/40 是唯一一处**四个数一起变好**的:再往上样数还降,
+                // 但组合数从 65 掉到 60 —— 那就是开始拿「每周吃一样的」换清单短了。
+                - extraItems * 20
+                - extraOver * 40
                 - missing * 4
                 - untouched * 25
                 - urgentLeft * 0.15

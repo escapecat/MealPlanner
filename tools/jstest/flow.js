@@ -25,6 +25,19 @@ global.SpecPriority = (function () {
   try { return require(path.join(A, 'core', 'specpriority.js')); } catch (e) { return null; }
 })();
 global.Nutrition = require(path.join(A, 'core', 'nutrition.js'));
+// ⚠️ Timing / Meal / Schedule **必须在这里就加载全**,不能等用到再 require。
+//
+//    以前它们散在文件中段(Meal 在 163 行),而前七条测试在那之前就跑完了 ——
+//    于是那七条测的是一个**线上不存在的求解器**:solver 里
+//    `if (typeof Meal !== 'undefined')` 整块被静默跳过,没有配菜、没有主料加量、
+//    没有蛋白补充项、连主菜门槛都不生效。
+//    发现它是因为「传 target 后最差一顿蛋白更高」挂了,查下去才知道
+//    两边都没跑加量 —— 测试green 过的那段时间里,它根本没在测该测的东西。
+//
+//    浏览器里 index.html 是一次性全部加载的,测试也必须照着来。
+global.Timing = require(path.join(A, 'core', 'timing.js'));
+global.Meal = require(path.join(A, 'core', 'meal.js'));
+global.Schedule = require(path.join(A, 'core', 'schedule.js'));
 var Solver = require(path.join(A, 'core', 'solver.js'));
 
 var fails = 0;
@@ -99,7 +112,6 @@ ok(res2.shortfall > 0, '不够用时如实报缺口,不静默补零');
 // --- 6. 排期:最容易坏的排前面 ---
 //     这条没测的话失败也是静默的:顺序看起来「有」,只是排错了,
 //     而后果要到第四天打开冰箱才发现。
-global.Schedule = require(path.join(A, 'core', 'schedule.js'));
 
 var meals = r1.stage2.chosen.map(function (c) {
   return { recipeId: c.recipe.id, prepLevel: c.variant.prepLevel, name: c.recipe.name };
@@ -126,14 +138,23 @@ ok(meals.map(function (m) { return m.recipeId; }).join() === before,
 //    注释也写了,但 rounds.js 从来没传 target,于是整项恒等于 0 —— **写了没接上**。
 //    线上表现:排出「晚饭 = 400g 青菜 + 一碗饭,442 kcal / 蛋白 18g」。
 //    这种「功能存在但没通电」的故障不会报错,只能靠对比测出来。
-global.Nutrition = require(path.join(A, 'core', 'nutrition.js'));
 
 var FULL = { equipment: ['炒锅', '汤锅', '不粘锅', '烤箱', '蒸锅', '空气炸锅'],
              maxActiveMinutes: 45, maxDifficulty: 4, blacklist: [] };
-var TGT = { kcal: 700, protein: 38, veg: 200 };
+// ⚠️ 目标得**真的有要求**,不然这条测不出东西来。
+//    原来用的是 protein 38 —— 后来 Meal.canBeMain 加了「不传 target 时按 22g 兜底」,
+//    而 38×0.6 = 23g,和兜底几乎一样。于是两边排出**一模一样的计划**,
+//    断言 w2 > w1 挂了,看起来像求解器坏了,其实是这条测试自己失去了分辨力。
+//    换成 65g(减脂男性的真实量级):门槛 39g,和兜底拉开差距,才测得出接线在不在。
+var TGT = { kcal: 900, protein: 65, veg: 250 };
+// ⚠️ 量的是 **c.nutrition(你实际吃到的)**,不是 ofMeal(菜谱原始值)。
+//    这两个数在加了「主料加量 + 蛋白补充项」之后就分家了:
+//    土豆 gnocchi 生蛋白 20g,求解器照样选它,然后加量+补一份把这顿补到 58g。
+//    按原始值量的话,传不传 target 都是 20g,断言挂掉 —— 看着像求解器坏了,
+//    其实是**量错了地方**:没人吃「菜谱原始值」,吃的是最后端上桌的那份。
 function worstProtein(res) {
   return res.stage2.chosen.reduce(function (m, c) {
-    return Math.min(m, Nutrition.ofMeal(c.variant).protein);
+    return Math.min(m, (c.nutrition || Nutrition.ofMeal(c.variant)).protein);
   }, 999);
 }
 var noT = Solver.solve(Object.assign({}, BASE, { constraints: FULL }));
@@ -149,7 +170,6 @@ ok(w2 > w1, '传 target 后最差一顿的蛋白更高(' + w1 + 'g → ' + w2 + 
 // ⚠️ 原来的模型是「一道菜 = 一顿饭」,可库里 17% 的菜蛋白低于 20g ——
 //    宁式烤菜(上海青 400g,蛋白 18g)能名正言顺地当一顿晚饭。
 //    加打分权重只是让它不容易被选中,没从根上排除。
-global.Meal = require(path.join(A, 'core', 'meal.js'));
 var full = Solver.solve(Object.assign({}, BASE, { constraints: FULL, target: TGT }));
 ok(full.ok, '加了主菜门槛还能排出来');
 

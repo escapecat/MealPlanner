@@ -67,6 +67,23 @@ for (var seed = 0; seed < N; seed++) {
                   + 'g · 动手 ' + m.active + '分 · ' + m.eatIn + '分能吃上');
     });
     console.log('     浪费 ' + Math.round(rows[seed].waste * 100) + '% · 采购 ' + rows[seed].buy + ' 样');
+    // ⚠️ 采购清单必须一起看。计划本身可能挺合理,清单却是「为了 8g 罗勒买一整盒」——
+    //    而清单才是你真正带去超市的那张纸。
+    console.log('     ── 采购清单 ──');
+    var KIND = { protein: '荤', veg: '菜', staple: '主食/调料' };
+    out.shopping.buy.forEach(function (b) {
+      var p = b.plan;
+      var line = '       [' + (KIND[b.kind] || '?') + '] ' + b.ing.name + '  要 ' + b.needGrams + 'g';
+      if (p) {
+        line += '  →  买 ' + (p.picks || []).map(function (x) {
+          return x.count + ' × ' + x.spec.netWeight + (x.spec.unit || 'g')
+                 + (x.spec.label ? '(' + x.spec.label + ')' : '');
+        }).join(' + ') + ' = ' + p.total + 'g';
+        var over = p.total - b.needGrams;
+        if (over > 0) line += '  剩 ' + over + 'g' + (over > b.needGrams ? '  ← 剩的比用的多' : '');
+      } else line += '  ← 没有包装规格,不知道该买多少';
+      console.log(line);
+    });
   }
 }
 
