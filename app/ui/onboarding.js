@@ -93,14 +93,14 @@ var Onboarding = (function () {
     var pm = Profile.perPlannedMeal(d, state.breakfast);
     box.appendChild(h('div', {}, [
       h('div', {}, ['基础代谢 ' + Profile.bmr(state) + ' kcal · 日常消耗 ' + d.tdee + ' kcal']),
-      h('div', { style: 'margin-top:6px;font-weight:600' },
+      h('div', { style: 'margin-top:8px;font-weight:600' },
         ['每日目标 ' + d.kcal + ' kcal · 蛋白 ' + d.protein + 'g · 蔬菜 ' + d.veg + 'g']),
-      h('div', { style: 'margin-top:6px' },
+      h('div', { style: 'margin-top:8px' },
         ['要排的午饭 / 晚饭各约 ' + pm.kcal + ' kcal · 蛋白 ' + pm.protein + 'g · 蔬菜 ' + pm.veg + 'g']),
       h('div', { class: 'hint' }, [pm.note]),
     ]));
     if (d.kcalFloored) {
-      box.appendChild(h('div', { class: 'note warn', style: 'margin-top:10px' },
+      box.appendChild(h('div', { class: 'note warn', style: 'margin-top:12px' },
         ['按 −20% 算出来低于安全下限,已抬到 ' + d.kcal + ' kcal。减脂不该靠把热量压到这么低。']));
     }
   }
@@ -249,7 +249,7 @@ var Onboarding = (function () {
       onclick: submit,
     }, ['开始用']));
 
-    w.appendChild(h('div', { class: 'hint', style: 'text-align:center;margin-top:10px' },
+    w.appendChild(h('div', { class: 'hint', style: 'text-align:center;margin-top:12px' },
       ['数据只存在这台设备的浏览器里,不上传']));
 
     el.appendChild(w);

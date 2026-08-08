@@ -88,11 +88,11 @@ var PantryUI = (function () {
       (it.openedAt ? ' · 已开封' : ''),
     ]));
 
-    var row = h('div', { style: 'display:flex;gap:6px;margin-top:10px;flex-wrap:wrap' });
+    var row = h('div', { style: 'display:flex;gap:8px;margin-top:12px;flex-wrap:wrap' });
     function act(label, fn, danger) {
       return h('button', {
         class: 'btn ghost',
-        style: 'width:auto;padding:6px 12px;font-size:13px' +
+        style: 'width:auto;padding:8px 12px;font-size:13px' +
                (danger ? ';color:var(--danger);border-color:var(--danger)' : ''),
         onclick: fn,
       }, [label]);
@@ -218,7 +218,7 @@ var PantryUI = (function () {
 
   function addForm() {
     var box = h('div', { class: 'card' });
-    box.appendChild(h('div', { style: 'font-weight:600;margin-bottom:10px' }, ['手动记一样']));
+    box.appendChild(h('div', { style: 'font-weight:600;margin-bottom:12px' }, ['手动记一样']));
 
     box.appendChild(h('div', { class: 'row' }, [
       h('label', { class: 'lab' }, ['是什么']),
@@ -226,7 +226,7 @@ var PantryUI = (function () {
         type: 'text', placeholder: '搜食材…… 例:鸡蛋 / 上海青', value: ingQ,
         oninput: function (e) { ingQ = e.target.value.trim(); renderHits(); },
       }),
-      h('div', { id: 'hits', style: 'margin-top:6px' }),
+      h('div', { id: 'hits', style: 'margin-top:8px' }),
     ]));
     box.appendChild(h('div', { class: 'row' }, [
       h('label', { class: 'lab' }, ['多少克']),
@@ -250,7 +250,7 @@ var PantryUI = (function () {
     ]));
     // ⚠️ 校验不弹窗。「先选是什么」这种话弹出来打断一下、还得点确定,
     //    远不如直接在按钮下面写一行 —— 错在哪儿眼睛就在哪儿。
-    var err = h('div', { class: 'note warn', style: 'display:none;margin-bottom:10px' });
+    var err = h('div', { class: 'note warn', style: 'display:none;margin-bottom:12px' });
     box.appendChild(err);
     function fail(msg) { err.textContent = msg; err.style.display = 'block'; }
 
@@ -353,7 +353,7 @@ var PantryUI = (function () {
                 || 'var(--text-dim)';
 
     var row = h('div', {
-      style: 'display:flex;gap:8px;align-items:center;padding:7px 0;' +
+      style: 'display:flex;gap:8px;align-items:center;padding:8px 0;' +
              'border-bottom:1px solid var(--border)',
     });
     row.appendChild(h('div', { style: 'flex:1;min-width:0' }, [
@@ -366,7 +366,7 @@ var PantryUI = (function () {
     ]));
     if (track && !entry.openedAt) {
       row.appendChild(h('button', {
-        class: 'btn ghost', style: 'width:auto;padding:4px 9px;font-size:12px;flex:0 0 auto',
+        class: 'btn ghost', style: 'width:auto;padding:4px 8px;font-size:12px;flex:0 0 auto',
         onclick: function () { Pantry.setOpened(ing.id, now()); render(); },
       }, ['开封了']));
     }
@@ -450,7 +450,7 @@ var PantryUI = (function () {
       render();
     };
     var row = h('div', {
-      style: 'display:flex;gap:10px;align-items:center;padding:9px 0;cursor:pointer;' +
+      style: 'display:flex;gap:12px;align-items:center;padding:8px 0;cursor:pointer;' +
              'border-bottom:1px solid var(--border)',
       onclick: hit,
     });
@@ -497,7 +497,7 @@ var PantryUI = (function () {
         '先清点一下 —— 这几样最常用。**没勾的会当成你没有**,以后出现在采购清单上,' +
         '所以别勾你其实没有的。',
       ]));
-      var c0 = h('div', { class: 'card', style: 'padding:2px 14px' });
+      var c0 = h('div', { class: 'card', style: 'padding:4px 16px' });
       Pantry.STARTER.forEach(function (id) {
         var ing = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
         if (ing) c0.appendChild(pickRow(ing, true));
@@ -509,10 +509,10 @@ var PantryUI = (function () {
       // ⚠️ 以前清点清单只有调料,米面不在里面,于是求解器只能默认白米:
       //    80% 的顿配白米饭、34/100 轮四顿全白米。
       //    勾几样杂粮,它就在这几样之间轮换;不勾就还是白米。
-      w.appendChild(h('div', { class: 'note', style: 'margin-top:18px' }, [
+      w.appendChild(h('div', { class: 'note', style: 'margin-top:16px' }, [
         '**主食**。勾几样,计划里就会换着来 —— 只勾白米就顿顿白米饭。',
       ]));
-      var c1 = h('div', { class: 'card', style: 'padding:2px 14px' });
+      var c1 = h('div', { class: 'card', style: 'padding:4px 16px' });
       Pantry.STARTER_GRAINS.forEach(function (id) {
         var ing = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
         if (ing) c1.appendChild(pickRow(ing, true));
@@ -547,13 +547,13 @@ var PantryUI = (function () {
 
     if (q) {
       var r = Search.find(q, Search.STAPLE, 20);
-      var c = h('div', { class: 'card', style: 'padding:2px 14px' });
+      var c = h('div', { class: 'card', style: 'padding:4px 16px' });
       if (!r.total) {
-        c.appendChild(h('div', { class: 'hint', style: 'padding:10px 0' },
+        c.appendChild(h('div', { class: 'hint', style: 'padding:12px 0' },
           ['调料柜里没有「' + q + '」']));
         var other = Search.find(q, Search.FRESH, 4);
         if (other.total) {
-          c.appendChild(h('div', { class: 'hint', style: 'padding-bottom:10px' }, [
+          c.appendChild(h('div', { class: 'hint', style: 'padding-bottom:12px' }, [
             '冰箱那边有:' + other.hits.map(function (i) { return i.name; }).join(' · '),
           ]));
         }
@@ -570,13 +570,13 @@ var PantryUI = (function () {
       // 自定义条目没有保质期、也接不上菜谱,如实标出来,不假装它和别的一样。
       if (!Pantry.hasStaple('custom:' + q)) {
         w.appendChild(h('button', {
-          class: 'btn ghost', style: 'margin-top:10px',
+          class: 'btn ghost', style: 'margin-top:12px',
           onclick: function () {
             Pantry.addCustomStaple(q);
             q = ''; render();
           },
         }, ['＋ 库里没有,按「' + q + '」记下']));
-        w.appendChild(h('div', { class: 'hint', style: 'text-align:center;margin-top:6px' }, [
+        w.appendChild(h('div', { class: 'hint', style: 'text-align:center;margin-top:8px' }, [
           '自己加的条目只记「有/没有」和买入时间 —— 保质期和菜谱关联都接不上',
         ]));
       }
@@ -599,11 +599,11 @@ var PantryUI = (function () {
       return a.name.localeCompare(b.name, 'zh');
     });
 
-    w.appendChild(h('div', { class: 'hint', style: 'margin-bottom:6px' }, [
+    w.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
       mine.length + ' 样。缺哪样会在生成计划时直接问你,不用先在这儿备齐。',
     ]));
 
-    var card = h('div', { class: 'card', style: 'padding:2px 14px' });
+    var card = h('div', { class: 'card', style: 'padding:4px 16px' });
     var lastCat = null;
     list.forEach(function (i) {
       card.appendChild(ownedRow(i, i.category !== lastCat ? i.category : null));
@@ -614,7 +614,7 @@ var PantryUI = (function () {
     // 建议放最后、压成一行 —— 这是「顺便提一句」,不是页面主体
     var sug = Pantry.suggestUnlocks(3);
     if (sug.length) {
-      w.appendChild(h('div', { class: 'hint', style: 'margin-top:14px' }, [
+      w.appendChild(h('div', { class: 'hint', style: 'margin-top:16px' }, [
         '还没有的里面,加这几样能多做最多菜:',
       ]));
       w.appendChild(h('div', { class: 'chips' }, sug.map(function (s2) {
@@ -654,7 +654,7 @@ var PantryUI = (function () {
     var w = h('div', { class: 'wrap' });
     w.appendChild(h('h1', {}, ['库存']));
 
-    w.appendChild(h('div', { class: 'seg', style: 'margin-bottom:14px' },
+    w.appendChild(h('div', { class: 'seg', style: 'margin-bottom:16px' },
       [['fridge', '冰箱 ' + items().length], ['staples', '调料柜']].map(function (t) {
         return h('button', {
           type: 'button', 'aria-pressed': String(tab === t[0]),

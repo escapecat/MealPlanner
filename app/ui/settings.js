@@ -94,7 +94,7 @@ var SettingsUI = (function () {
     var pm = Profile.perPlannedMeal(d, p.breakfast);
     box.appendChild(h('div', { style: 'font-weight:600' }, ['每日目标 ' + d.kcal + ' kcal']));
     box.appendChild(h('div', {}, ['蛋白 ' + d.protein + 'g · 蔬菜 ' + d.veg + 'g']));
-    box.appendChild(h('div', { style: 'margin-top:6px' },
+    box.appendChild(h('div', { style: 'margin-top:8px' },
       ['要排的午饭 / 晚饭各约 ' + pm.kcal + ' kcal · 蛋白 ' + pm.protein + 'g']));
     box.appendChild(h('div', { class: 'hint' }, [pm.note]));
     box.appendChild(h('div', { class: 'hint' }, [
@@ -214,7 +214,7 @@ var SettingsUI = (function () {
       type: 'text', placeholder: '搜食材加进来…… 羊肉 / 香菜 / 内脏', value: blQ,
       oninput: function (e) { blQ = e.target.value.trim(); renderBlHits(cfg); },
     }));
-    box.appendChild(h('div', { id: 'blhits', style: 'margin-top:6px' }));
+    box.appendChild(h('div', { id: 'blhits', style: 'margin-top:8px' }));
 
     // 常见的几个快选(已经在列表里的不再显示)
     var quick = Catalog.commonDislikes().filter(function (d) { return list.indexOf(d.id) < 0; });
@@ -368,7 +368,7 @@ var SettingsUI = (function () {
     var nCal = Object.keys(Store.get('packageOverrides', {}) || {}).length +
                (Store.get('userPackages', []) || []).length;
     var nWaste = (Store.get('wasteLog', []) || []).length;
-    box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:10px' }, [
+    box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:12px' }, [
       '记录 ' + (Store.get('rounds', []) || []).length + ' 轮 · ' +
       '冰箱 ' + Pantry.items().length + ' 项 · ' +
       '调料 ' + ((Pantry.staples() || []).length) + ' 样 · ' +

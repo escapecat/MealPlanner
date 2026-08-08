@@ -66,12 +66,14 @@ var RecipesUI = (function () {
     return bits.join(' · ');
   }
 
+  /** 展示用的小标签。
+   *  ⚠️ 用 .tag,**不是 .chips button** —— 那个是可点的,有 44px 触摸下限,
+   *     拿来标食材会让一行食材撑成两行按钮。可点的和不可点的必须分开。 */
   function chip(text, kind) {
-    var st = 'font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--border);';
-    if (kind === 'main') st += 'background:var(--accent-dim);color:var(--accent);font-weight:600';
-    else if (kind === 'dashed') st = st.replace('solid', 'dashed') + 'color:var(--text-dim)';
-    else st += 'color:var(--text-dim)';
-    return h('span', { style: st }, [text]);
+    var cls = 'tag' + (kind === 'main' ? ' strong' : '');
+    return h('span', { class: cls,
+                       style: kind === 'dashed' ? 'border:1px dashed var(--border-2)' : null },
+             [text]);
   }
 
   function detail(r) {
@@ -94,7 +96,7 @@ var RecipesUI = (function () {
           ['提前:' + v.aheadOfTime]));
       }
 
-      var line = h('div', { style: 'display:flex;gap:5px;flex-wrap:wrap;margin-top:6px' });
+      var line = h('div', { style: 'display:flex;gap:4px;flex-wrap:wrap;margin-top:8px' });
       (v.ingredients || []).forEach(function (it) {
         line.appendChild(chip(
           it.names.join('/') + (it.qty ? ' ' + it.qty + (it.unit || 'g') : (it.toTaste ? ' 适量' : '')),
@@ -107,19 +109,16 @@ var RecipesUI = (function () {
       box.appendChild(line);
 
       if ((v.seasonings || []).length) {
-        box.appendChild(h('div', { style: 'display:flex;gap:5px;flex-wrap:wrap;margin-top:6px' },
+        box.appendChild(h('div', { style: 'display:flex;gap:4px;flex-wrap:wrap;margin-top:8px' },
           v.seasonings.map(function (it) {
             var have = it.ids.some(function (id) { return Pantry.hasStaple(id); });
-            return h('span', {
-              style: 'font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid ' +
-                     (have ? 'var(--border);color:var(--text-dim)'
-                           : 'var(--warn);color:var(--warn)'),
-            }, [it.names.join('/') + (have ? '' : ' 没有')]);
+            return h('span', { class: 'tag' + (have ? '' : ' warn') },
+                     [it.names.join('/') + (have ? '' : ' 没有')]);
           })));
       }
 
       if (nu) {
-        box.appendChild(h('div', { class: 'hint', style: 'margin-top:6px' }, [
+        box.appendChild(h('div', { class: 'hint', style: 'margin-top:8px' }, [
           '约 ' + nu.kcal + ' kcal · 蛋白 ' + nu.protein + 'g · 蔬菜 ' + nu.veg + 'g' +
           (nu.selfContained ? ' · 自带主食' : ' · 已含那碗饭'),
         ]));
@@ -139,7 +138,7 @@ var RecipesUI = (function () {
                                   ? v.equipmentRequired : null);
       (chk.subs || []).forEach(function (sub) {
         if (!sub.note) return;
-        box.appendChild(h('div', { class: 'note', style: 'margin-top:6px' }, [
+        box.appendChild(h('div', { class: 'note', style: 'margin-top:8px' }, [
           '你没有这个,用 **' + sub.via + '** 顶:' + sub.note,
         ]));
       });
@@ -154,7 +153,7 @@ var RecipesUI = (function () {
 
     box.appendChild(h('a', {
       class: 'btn ghost',
-      style: 'width:auto;padding:5px 12px;font-size:13px;text-decoration:none;' +
+      style: 'width:auto;padding:4px 12px;font-size:13px;text-decoration:none;' +
              'display:inline-block;margin-top:8px',
       href: 'https://www.xiachufang.com/search/?keyword=' + encodeURIComponent(r.name),
       target: '_blank', rel: 'noopener',
@@ -162,7 +161,7 @@ var RecipesUI = (function () {
 
     box.appendChild(h('button', {
       class: 'btn ghost',
-      style: 'width:auto;padding:5px 12px;font-size:13px;margin-top:8px;margin-left:6px',
+      style: 'width:auto;padding:4px 12px;font-size:13px;margin-top:8px;margin-left:8px',
       onclick: function () { editRecipe(r); },
     }, [RecipeBook.hasOverride(r.id) ? '改过了 · 再改' : '按我的情况改']));
 
@@ -491,7 +490,7 @@ var RecipesUI = (function () {
   function dishRow(r) {
     var open = !!openD[r.id];
     var ok = doable(r);
-    var row = h('div', { style: 'padding:9px 0;border-bottom:1px solid var(--border)' });
+    var row = h('div', { style: 'padding:8px 0;border-bottom:1px solid var(--border)' });
 
     var head = h('div', {
       style: 'display:flex;gap:8px;align-items:baseline;cursor:pointer',
@@ -500,7 +499,7 @@ var RecipesUI = (function () {
     head.appendChild(h('div', { style: 'flex:1' + (ok ? '' : ';color:var(--text-dim)') }, [
       r.name,
       r.variants.length > 1
-        ? h('span', { class: 'hint', style: 'margin-left:6px' }, [r.variants.length + ' 档'])
+        ? h('span', { class: 'hint', style: 'margin-left:8px' }, [r.variants.length + ' 档'])
         : null,
     ]));
     if (!ok) head.appendChild(h('span', { class: 'conf conf-C' }, ['做不了']));
@@ -542,7 +541,7 @@ var RecipesUI = (function () {
 
     if (byName.length) {
       w.appendChild(h('div', { class: 'hint' }, ['菜名匹配 ' + byName.length + ' 道']));
-      var c1 = h('div', { class: 'card', style: 'padding:2px 14px' });
+      var c1 = h('div', { class: 'card', style: 'padding:4px 16px' });
       byName.slice(0, 40).forEach(function (r) { c1.appendChild(dishRow(r)); });
       w.appendChild(c1);
       if (byName.length > 40) {
@@ -554,7 +553,7 @@ var RecipesUI = (function () {
     if (byIng.length) {
       w.appendChild(h('div', { class: 'hint', style: 'margin-top:12px' },
         ['用到「' + q + '」的 ' + byIng.length + ' 道']));
-      var c2 = h('div', { class: 'card', style: 'padding:2px 14px' });
+      var c2 = h('div', { class: 'card', style: 'padding:4px 16px' });
       byIng.slice(0, 30).forEach(function (r) { c2.appendChild(dishRow(r)); });
       w.appendChild(c2);
       if (byIng.length > 30) {
@@ -599,9 +598,9 @@ var RecipesUI = (function () {
     keys.forEach(function (k) {
       var rows = byWhy[k];
       var open = !!openG[k];
-      var card = h('div', { class: 'card', style: 'padding:2px 14px' });
+      var card = h('div', { class: 'card', style: 'padding:4px 16px' });
       card.appendChild(h('div', {
-        style: 'display:flex;gap:8px;align-items:center;padding:11px 0;cursor:pointer' +
+        style: 'display:flex;gap:8px;align-items:center;padding:12px 0;cursor:pointer' +
                (open ? ';border-bottom:1px solid var(--border)' : ''),
         onclick: function () { openG[k] = !open; render(); },
       }, [
@@ -684,7 +683,7 @@ var RecipesUI = (function () {
 
     if (q) { renderSearch(w); el.appendChild(w); return; }
 
-    w.appendChild(h('div', { class: 'seg', style: 'margin-bottom:10px' },
+    w.appendChild(h('div', { class: 'seg', style: 'margin-bottom:12px' },
       [['file', '按菜系'], ['method', '按做法'], ['flavor', '按味型']].map(function (o) {
         return h('button', {
           type: 'button', 'aria-pressed': String(groupBy === o[0]),
@@ -719,9 +718,9 @@ var RecipesUI = (function () {
 
     keys.forEach(function (k) {
       var open = !!openG[k];
-      var card = h('div', { class: 'card', style: 'padding:2px 14px' });
+      var card = h('div', { class: 'card', style: 'padding:4px 16px' });
       card.appendChild(h('div', {
-        style: 'display:flex;gap:8px;align-items:center;padding:11px 0;cursor:pointer' +
+        style: 'display:flex;gap:8px;align-items:center;padding:12px 0;cursor:pointer' +
                (open ? ';border-bottom:1px solid var(--border)' : ''),
         onclick: function () { openG[k] = !open; render(); },
       }, [

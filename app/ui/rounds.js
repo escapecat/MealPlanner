@@ -53,7 +53,7 @@ var RoundsUI = (function () {
     var meals = draft.days * draft.perDay;
 
     var card = h('div', { class: 'card' });
-    card.appendChild(h('div', { style: 'font-weight:600;margin-bottom:10px' }, ['这次做多少']));
+    card.appendChild(h('div', { style: 'font-weight:600;margin-bottom:12px' }, ['这次做多少']));
 
     card.appendChild(h('div', { class: 'row' }, [
       h('label', { class: 'lab' }, ['做几天']),
@@ -102,7 +102,7 @@ var RoundsUI = (function () {
 
     // ---- 这次有什么不一样(默认收起,不改就不用点开)----
     card.appendChild(h('button', {
-      class: 'btn ghost', style: 'margin-top:4px;font-size:14px;padding:9px',
+      class: 'btn ghost', style: 'margin-top:4px;font-size:14px;padding:8px',
       onclick: function () { draft.more = !draft.more; renderSheet(); },
     }, [draft.more ? '收起' : '这次有什么不一样?(可跳过)']));
 
@@ -178,7 +178,7 @@ var RoundsUI = (function () {
     }
 
     card.appendChild(h('button', {
-      class: 'btn', style: 'margin-top:14px',
+      class: 'btn', style: 'margin-top:16px',
       onclick: create,
     }, ['记下这一次']));
     card.appendChild(h('button', {
@@ -528,7 +528,7 @@ var RoundsUI = (function () {
     if (useStock.length) {
       box.appendChild(h('div', { style: 'font-weight:600;margin:12px 0 6px' }, ['先用库存里的']));
       useStock.forEach(function (it) {
-        box.appendChild(h('div', { class: 'note', style: 'margin-bottom:6px' }, [
+        box.appendChild(h('div', { class: 'note', style: 'margin-bottom:8px' }, [
           it.name + ' —— 这次要 ' + it.needGrams + 'g,库存里能出 ' + it.stockGrams + 'g',
         ]));
       });
@@ -539,45 +539,72 @@ var RoundsUI = (function () {
     var todo = s.shopping.filter(function (x) { return !x.bought; });
     var done = s.shopping.filter(function (x) { return x.bought; });
 
-    box.appendChild(h('div', { style: 'font-weight:600;margin:12px 0 4px' }, [
-      todo.length ? '还要买 ' + todo.length + ' 样' : '都买齐了',
+    // 进度看得见,不用读出来。
+    // ⚠️ 改版前这儿是「还要买 8 样」+ 一行 hint「克数是菜谱算出来的需求…」——
+    //    而同一句话上面的 note 里已经说过一遍、每行括号里还有第三遍。
+    //    一屏说三次同一句告诫,等于一次都没说。
+    var boughtN = done.length, allN = s.shopping.length;
+    box.appendChild(h('div', { class: 'between', style: 'margin:16px 0 8px' }, [
+      h('div', { style: 'font-weight:600' },
+        [todo.length ? '还要买 ' + todo.length + ' 样' : '都买齐了']),
+      h('div', { class: 'xs dim' }, [boughtN + ' / ' + allN]),
     ]));
-    if (todo.length) {
-      box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
-        '克数是菜谱算出来的需求,拿最接近的规格就行',
+    if (allN) {
+      box.appendChild(h('div', { class: 'prog', style: 'margin-bottom:12px' }, [
+        h('i', { style: 'width:' + Math.round(boughtN / allN * 100) + '%' }),
       ]));
     }
 
+    /**
+     * 采购清单的一行。
+     *
+     * ⚠️ 改版前每样食材是**一张 .card** —— 8 样就是 8 个带边框和阴影的盒子,
+     *    一屏 246 个节点、1969 个字。清单是清单,不是 8 张卡片。
+     *
+     * ⚠️ 而且只有那个 18px 的 ☐ 能点。储物柜那次已经踩过一模一样的坑
+     *    (「我也点击不了啊」),这里又来一遍 —— **整行才是点击区**。
+     *
+     * ⚠️ 「规格不对?」原来是每行一个 .btn ghost。8 行 8 个实心按钮,
+     *    跟主操作(勾掉)抢注意力。降级成 .act:边框细、字小、颜色淡,
+     *    要紧的那几个(剩一半以上)才标黄。
+     */
     function shopRow(it, compact) {
-      var card2 = h('div', {
-        class: 'card',
-        style: 'padding:' + (compact ? '8px 12px' : '10px 12px') + ';margin-bottom:6px' +
-               (compact ? ';opacity:.6' : ''),
-      });
-      var head = h('div', { style: 'display:flex;gap:8px;align-items:center' });
-      head.appendChild(h('button', {
+      var actual = it.actualGrams != null ? it.actualGrams : it.needGrams;
+      var row = h('button', {
         type: 'button',
-        style: 'border:0;background:none;font-size:18px;cursor:pointer;padding:0;flex:0 0 auto',
+        class: 'list-row' + (it.bought ? ' done' : ''),
         onclick: function () { toggleBought(r, it.ingredientId); },
-      }, [it.bought ? '☑' : '☐']));
+      });
+      row.appendChild(h('span', { class: 'ck' }, ['✓']));
+
+      var sub;
+      if (compact) {
+        sub = actual + it.unit;
+      } else {
+        // ⚠️ 「规格是估的」这句话改版前在一屏里说了**三遍**:
+        //    顶部 note 一遍、列表上方 hint 一遍、每行括号里再一遍。
+        //    留最外层那一句就够,行里只报数。
+        sub = it.hintPack
+          ? '常见 ' + it.hintPack + it.unit + (it.hintPacks > 1 ? ' × ' + it.hintPacks : '')
+          : '规格未知';
+        if (it.tier === 'fresh' && it.shelfLifeDays) sub += ' · 冷藏 ' + it.shelfLifeDays + ' 天';
+        var extra = actual - it.needGrams;
+        if (extra > 5) sub += ' · 剩 ' + Math.round(extra) + it.unit + ' 进库存';
+      }
+      row.appendChild(h('div', { class: 'body' }, [
+        h('div', { class: 'ttl' }, [it.name + '  ' + (compact ? '' : it.needGrams + it.unit)]),
+        h('div', { class: 'sub2' }, [sub]),
+      ]));
 
       if (compact) {
-        // 买了的:一行搞定,点数字就能改
-        head.appendChild(h('div', { style: 'flex:1' }, [
-          h('span', { style: 'text-decoration:line-through' }, [it.name]),
-          h('span', { class: 'hint' }, [
-            '  ' + (it.actualGrams != null ? it.actualGrams : it.needGrams) + it.unit,
-          ]),
-        ]));
-        head.appendChild(h('button', {
-          class: 'btn ghost',
-          style: 'width:auto;padding:3px 9px;font-size:11px;flex:0 0 auto',
-          onclick: function () {
+        row.appendChild(h('span', {
+          class: 'act',
+          onclick: function (e) {
+            e.stopPropagation();          // 别把「改数字」变成「取消勾选」
             Modal.ask({
               title: '实际买了多少 ' + it.name + '?',
               hint: '填实际称重的话,进库存的数就是准的,下一轮排菜也会跟着准。',
-              type: 'number', suffix: it.unit,
-              value: it.actualGrams != null ? it.actualGrams : (it.hintPack || it.needGrams),
+              type: 'number', suffix: it.unit, value: actual,
               presets: it.hintPack ? [{ label: '就一包 ' + it.hintPack + it.unit,
                                         value: it.hintPack }] : null,
             }).then(function (v) {
@@ -587,39 +614,24 @@ var RoundsUI = (function () {
             });
           },
         }, ['改']));
-        card2.appendChild(head);
-        var extra = (it.actualGrams != null ? it.actualGrams : it.needGrams) - it.needGrams;
-        if (extra > 5) {
-          card2.appendChild(h('div', { class: 'hint', style: 'margin-left:26px' }, [
-            '剩 ' + Math.round(extra) + it.unit + ' 进库存',
-          ]));
-        }
-        return card2;
+        return row;
       }
 
-      head.appendChild(h('div', { style: 'flex:1' }, [
-        h('div', { style: 'font-weight:600' }, [it.name + '  ' + it.needGrams + it.unit]),
-        h('div', { class: 'hint' }, [
-          (it.hintPack
-            ? '常见 ' + it.hintPack + it.unit +
-              (it.hintPacks > 1 ? ' × ' + it.hintPacks : '') + '(估的)'
-            : '规格未知') +
-          (it.tier === 'fresh' && it.shelfLifeDays ? ' · 冷藏 ' + it.shelfLifeDays + ' 天' : ''),
-        ]),
-      ]));
       if (it.hintPack) {
-        // 这一条的规格准不准要紧吗?要紧的才提示 ——
+        // 这一条的规格准不准要紧吗?要紧的才标黄 ——
         // 「一道菜用 30g、包装 300g」这种错 20% 会明显改变推荐;
         // 「一道菜用 250g、包装 300g」错一点无所谓。
-        var worth = it.needGrams && it.hintPack && (it.hintPack - it.needGrams) / it.hintPack > 0.5;
-        head.appendChild(h('button', {
-          class: 'btn ghost',
-          style: 'width:auto;padding:4px 8px;font-size:11px;flex:0 0 auto' +
-                 (worth ? ';border-color:var(--warn);color:var(--warn)' : ''),
-          onclick: function () {
+        var worth = it.needGrams && (it.hintPack - it.needGrams) / it.hintPack > 0.5;
+        row.appendChild(h('span', {
+          class: 'act' + (worth ? ' warn' : ''),
+          onclick: function (e) {
+            e.stopPropagation();
             Modal.ask({
               title: '这包 ' + it.name + ' 实际是多少?',
-              hint: '看包装上写的净含量。改了以后排菜会更准,不改也不影响这次记账。',
+              hint: worth
+                ? '这次只用 ' + it.needGrams + it.unit + ',按 ' + it.hintPack + it.unit +
+                  ' 买会剩不少。看包装上的净含量填一下,以后排菜会更准。'
+                : '看包装上写的净含量。改了以后排菜会更准,不改也不影响这次记账。',
               type: 'number', suffix: it.unit, value: it.hintPack, ok: '就按这个算',
             }).then(function (v) {
               if (v == null) return;
@@ -629,29 +641,29 @@ var RoundsUI = (function () {
               render();
             });
           },
-        }, [worth ? '规格?' : '规格不对?']));
+        }, ['规格']));
       }
-      card2.appendChild(head);
-      if (worth) {
-        card2.appendChild(h('div', { class: 'hint', style: 'margin-left:26px;color:var(--warn)' }, [
-          '这次只用 ' + it.needGrams + it.unit + ',按 ' + it.hintPack + it.unit +
-          ' 买会剩不少 —— 实际规格要是更小,顺手点一下改掉',
-        ]));
-      }
-      return card2;
+      return row;
     }
 
-    todo.forEach(function (it) { box.appendChild(shopRow(it, false)); });
+    // 一个容器装所有行,行之间用细线 —— 不是每行自己一张卡片
+    if (todo.length) {
+      var todoList = h('div', { class: 'list' });
+      todo.forEach(function (it) { todoList.appendChild(shopRow(it, false)); });
+      box.appendChild(todoList);
+    }
 
     if (done.length) {
       box.appendChild(h('button', {
         class: 'btn ghost',
-        style: 'margin-top:10px;margin-bottom:6px;font-size:13px;padding:7px',
+        style: 'margin-top:12px;margin-bottom:8px;font-size:13px;padding:8px',
         onclick: function () { showBought = !showBought; render(); },
       }, [(showBought ? '▾ ' : '▸ ') + '已买 ' + done.length + ' 样']));
       if (showBought) {
-        done.forEach(function (it) { box.appendChild(shopRow(it, true)); });
-        box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:6px' }, [
+        var doneList = h('div', { class: 'list', style: 'margin-bottom:8px' });
+        done.forEach(function (it) { doneList.appendChild(shopRow(it, true)); });
+        box.appendChild(doneList);
+        box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
           '默认按需求量记进库存了。买多了的话点「改」填实际克数,多的会算成结转。',
         ]));
       }
@@ -662,10 +674,10 @@ var RoundsUI = (function () {
       return !Pantry.hasStaple(x.ingredientId);
     });
     if (seas.length) {
-      box.appendChild(h('div', { style: 'font-weight:600;margin:14px 0 6px' },
+      box.appendChild(h('div', { style: 'font-weight:600;margin:16px 0 6px' },
         ['还差 ' + seas.length + ' 样调料']));
       seas.forEach(function (sx) {
-        var line = h('div', { class: 'card', style: 'padding:10px 12px;margin-bottom:6px' });
+        var line = h('div', { class: 'card', style: 'padding:12px 12px;margin-bottom:8px' });
         line.appendChild(h('div', {}, [sx.name]));
         line.appendChild(h('div', { class: 'hint' }, [
           sx.dishes.slice(0, 2).join(' · ') + (sx.dishes.length > 2 ? ' 等 ' + sx.dishes.length + ' 道菜要用' : ' 要用') +
@@ -675,13 +687,13 @@ var RoundsUI = (function () {
           line.appendChild(h('div', { class: 'hint', style: 'color:var(--warn)' },
             ['⚠️ 最小规格一个人多半吃不完,想清楚再买']));
         }
-        var btns = h('div', { style: 'display:flex;gap:6px;margin-top:8px' });
+        var btns = h('div', { style: 'display:flex;gap:8px;margin-top:8px' });
         btns.appendChild(h('button', {
-          class: 'btn ghost', style: 'width:auto;padding:5px 12px;font-size:13px',
+          class: 'btn ghost', style: 'width:auto;padding:4px 12px;font-size:13px',
           onclick: function () { Pantry.toggleStaple(sx.ingredientId); render(); },
         }, ['我有']));
         btns.appendChild(h('button', {
-          class: 'btn ghost', style: 'width:auto;padding:5px 12px;font-size:13px',
+          class: 'btn ghost', style: 'width:auto;padding:4px 12px;font-size:13px',
           onclick: function () { Pantry.toggleStaple(sx.ingredientId); render(); },
         }, ['买了 · 记进储物柜']));
         line.appendChild(btns);
@@ -694,7 +706,7 @@ var RoundsUI = (function () {
     //    排期不写回存储:它能从保质期算出来,存下来就会变成对不上的旧账。
     var plan = Schedule.assign(s.meals, r.input.days, r.input.perDay);
 
-    box.appendChild(h('div', { style: 'font-weight:600;margin:14px 0 6px' }, ['做这些']));
+    box.appendChild(h('div', { style: 'font-weight:600;margin:16px 0 6px' }, ['做这些']));
 
     // ⚠️ **补不动就得说**。补一份蛋白能拉近差距,但库里能到高蛋白的菜本来就少
     //    (一份典型减脂配置下,293 个可做档位只有 7 个到得了 59g)。
@@ -742,8 +754,8 @@ var RoundsUI = (function () {
     plan.forEach(function (p, i) {
       if (p.day !== lastDay) {
         box.appendChild(h('div', {
-          style: 'font-weight:600;font-size:14px;margin:14px 0 4px;' +
-                 'padding-top:10px;border-top:1px solid var(--border)',
+          style: 'font-weight:600;font-size:14px;margin:16px 0 4px;' +
+                 'padding-top:12px;border-top:1px solid var(--border)',
         }, ['第 ' + p.day + ' 天']));
         lastDay = p.day;
       }
@@ -764,7 +776,7 @@ var RoundsUI = (function () {
    *    状态机里有 UI 到不了的状态,等于流程断在最关键的地方。
    */
   function nextStep(r) {
-    var box = h('div', { style: 'margin-top:14px' });
+    var box = h('div', { style: 'margin-top:16px' });
     var s = r.solved;
 
     function setStatus(st) {
@@ -827,7 +839,7 @@ var RoundsUI = (function () {
   function mealCard(r, m, i, sched, slot) {
     var cooking = r.status === 'cooking' || r.status === 'done';
     var rv = variantOf(m);
-    var card = h('div', { class: 'card', style: 'padding:10px 12px;margin-bottom:6px' +
+    var card = h('div', { class: 'card', style: 'padding:12px 12px;margin-bottom:8px' +
                                                 (m.cooked ? ';opacity:.55' : '') });
 
     var head = h('div', { style: 'display:flex;gap:8px;align-items:baseline' });
@@ -869,12 +881,9 @@ var RoundsUI = (function () {
     if (ings.length) {
       var chips = ings.map(function (x) {
         var strong = x.role === 'main';
-        return h('span', {
-          style: 'font-size:12px;padding:2px 8px;border-radius:999px;' +
-                 'border:1px solid var(--border);' +
-                 (strong ? 'background:var(--accent-dim);color:var(--accent);font-weight:600'
-                         : 'color:var(--text-dim)'),
-        }, [x.name + (x.qty ? ' ' + x.qty + x.unit : (x.toTaste ? ' 适量' : '')) +
+        // .tag 是展示用的(不可点);可点的筛选按钮用 .chips button,有 44px 下限
+        return h('span', { class: 'tag' + (strong ? ' strong' : '') },
+                 [x.name + (x.qty ? ' ' + x.qty + x.unit : (x.toTaste ? ' 适量' : '')) +
             (x.alt ? ' 或…' : '')]);
       });
 
@@ -883,13 +892,12 @@ var RoundsUI = (function () {
       //    于是「宁式烤菜」在页面上看起来就是一整顿只吃 400g 青菜,当然诡异。
       //    nutrition.js 里那行注释写的就是「补了什么主食,UI 要显示出来」。
       if (nu && nu.staple) {
-        chips.push(h('span', {
-          style: 'font-size:12px;padding:2px 8px;border-radius:999px;' +
-                 'border:1px dashed var(--border);color:var(--text-dim)',
-        }, ['配 ' + nu.staple.name + ' ' + nu.staple.grams + 'g(生重)']));
+        // 虚线边框 = 「这不是菜谱里的,是 app 给你配上的」
+        chips.push(h('span', { class: 'tag', style: 'border:1px dashed var(--border-2)' },
+                     ['配 ' + nu.staple.name + ' ' + nu.staple.grams + 'g(生重)']));
       }
       card.appendChild(h('div', {
-        style: 'display:flex;gap:5px;flex-wrap:wrap;margin-top:8px',
+        style: 'display:flex;gap:4px;flex-wrap:wrap;margin-top:8px',
       }, chips));
     }
 
@@ -898,7 +906,7 @@ var RoundsUI = (function () {
     //    只写 220g 的话,下次你翻菜谱页看到 150g 会以为哪儿错了。
     // 份量缩回来了 —— 和加量一样必须显示原值,否则你翻菜谱页看到 250g 会以为哪儿错了。
     if (m.scale && m.scale.cuts && m.scale.cuts.length) {
-      card.appendChild(h('div', { class: 'hint', style: 'margin-top:6px;color:var(--accent)' }, [
+      card.appendChild(h('div', { class: 'hint', style: 'margin-top:8px;color:var(--accent)' }, [
         '按你的热量目标缩了份量:**' +
         m.scale.cuts.map(function (x) { return x.name + ' ' + x.from + 'g → ' + x.to + 'g'; })
           .join(' · ') + '**(−' + m.scale.kcal + ' kcal)',
@@ -906,7 +914,7 @@ var RoundsUI = (function () {
     }
 
     if (m.boost) {
-      card.appendChild(h('div', { class: 'hint', style: 'margin-top:6px;color:var(--accent)' }, [
+      card.appendChild(h('div', { class: 'hint', style: 'margin-top:8px;color:var(--accent)' }, [
         '按你的蛋白目标加了量:**' + m.boost.name + ' ' + m.boost.from + 'g → ' +
         m.boost.to + 'g**(+' + m.boost.protein + 'g 蛋白)',
       ]));
@@ -924,7 +932,7 @@ var RoundsUI = (function () {
               - (m.scale ? m.scale.kcal : 0);
       var upP = (m.topUp ? m.topUp.protein : 0) + (m.boost ? m.boost.protein : 0)
               - (m.scale ? m.scale.protein : 0);
-      card.appendChild(h('div', { class: 'hint', style: 'margin-top:6px' }, [
+      card.appendChild(h('div', { class: 'hint', style: 'margin-top:8px' }, [
         '约 ' + (nu.kcal + (sideNu ? sideNu.kcal : 0) + upK) + ' kcal · 蛋白 ' +
         (nu.protein + (sideNu ? sideNu.protein : 0) + upP) + 'g · 蔬菜 ' +
         (nu.veg + (sideNu ? sideNu.veg : 0)) + 'g' +
@@ -938,7 +946,7 @@ var RoundsUI = (function () {
     //    (典型配置下 293 个可做档位只有 7 个能到 59g),所以补一份。
     if (m.topUp) {
       card.appendChild(h('div', {
-        style: 'margin-top:8px;padding:8px 10px;border-left:3px solid var(--warn);' +
+        style: 'margin-top:8px;padding:8px 12px;border-left:3px solid var(--warn);' +
                'background:var(--warn-dim);border-radius:0 8px 8px 0;font-size:13px',
       }, [
         '加 · ' + m.topUp.name + ' ' + m.topUp.grams + 'g',
@@ -955,7 +963,7 @@ var RoundsUI = (function () {
     if (m.side) {
       var sv = variantOf(m.side);
       var sideBox = h('div', {
-        style: 'margin-top:10px;padding:8px 10px;border-left:3px solid var(--accent);' +
+        style: 'margin-top:12px;padding:8px 12px;border-left:3px solid var(--accent);' +
                'background:var(--accent-dim);border-radius:0 8px 8px 0',
       });
       sideBox.appendChild(h('div', { style: 'font-size:13px' }, [
@@ -967,12 +975,10 @@ var RoundsUI = (function () {
       ]));
       if (sv) {
         sideBox.appendChild(h('div', {
-          style: 'display:flex;gap:5px;flex-wrap:wrap;margin-top:5px',
+          style: 'display:flex;gap:4px;flex-wrap:wrap;margin-top:4px',
         }, mealIngredients(m.side).map(function (x) {
-          return h('span', {
-            style: 'font-size:12px;padding:1px 7px;border-radius:999px;' +
-                   'border:1px solid var(--border);color:var(--text-dim)',
-          }, [x.name + (x.qty ? ' ' + x.qty + x.unit : '')]);
+          return h('span', { class: 'tag' },
+                   [x.name + (x.qty ? ' ' + x.qty + x.unit : '')]);
         })));
       }
       card.appendChild(sideBox);
@@ -991,7 +997,7 @@ var RoundsUI = (function () {
         var paint = function () {
           nb.innerHTML = '';
           nb.appendChild(Dom.text('· ' + (full ? note : note.slice(0, 56) + '…')));
-          nb.appendChild(h('span', { style: 'color:var(--accent);margin-left:6px' },
+          nb.appendChild(h('span', { style: 'color:var(--accent);margin-left:8px' },
                            [full ? '收起' : '展开']));
         };
         nb.addEventListener('click', function () { full = !full; paint(); });
@@ -1011,13 +1017,11 @@ var RoundsUI = (function () {
         lack ? '调料 · 要买 ' + lack + ' 样' : '调料 · 都有',
       ]));
       card.appendChild(h('div', {
-        style: 'display:flex;gap:5px;flex-wrap:wrap;margin-top:4px',
+        style: 'display:flex;gap:4px;flex-wrap:wrap;margin-top:4px',
       }, seas.map(function (x) {
-        return h('span', {
-          style: 'font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid ' +
-                 (x.have ? 'var(--border);color:var(--text-dim)'
-                         : 'var(--warn);color:var(--warn);background:var(--warn-dim)'),
-        }, [x.name + (x.have ? '' : ' 要买')]);
+        // 没有的调料标黄 —— 这是「到超市才发现少一样」唯一的提前预警
+        return h('span', { class: 'tag' + (x.have ? '' : ' warn') },
+                 [x.name + (x.have ? '' : ' 要买')]);
       })));
     }
 
@@ -1034,14 +1038,14 @@ var RoundsUI = (function () {
       });
     }
 
-    var acts = h('div', { style: 'display:flex;gap:6px;margin-top:10px;flex-wrap:wrap' });
+    var acts = h('div', { style: 'display:flex;gap:8px;margin-top:12px;flex-wrap:wrap' });
 
     // ⚠️ 库里**没有做法步骤**,只有上面那一行备注。
     //    DESIGN 的定位是「食材流转管理器,不是菜谱推荐器」,不自己写 512 道菜的步骤
     //    是对的 —— 我写也是编的。但不写不等于不给出口,以前连出口都没有。
     acts.appendChild(h('a', {
       class: 'btn ghost',
-      style: 'width:auto;padding:5px 12px;font-size:13px;text-decoration:none;' +
+      style: 'width:auto;padding:4px 12px;font-size:13px;text-decoration:none;' +
              'display:inline-block;text-align:center',
       href: 'https://www.xiachufang.com/search/?keyword=' + encodeURIComponent(m.name),
       target: '_blank', rel: 'noopener',
@@ -1049,12 +1053,12 @@ var RoundsUI = (function () {
 
     if (!cooking) {
       acts.appendChild(h('button', {
-        class: 'btn ghost', style: 'width:auto;padding:5px 12px;font-size:13px',
+        class: 'btn ghost', style: 'width:auto;padding:4px 12px;font-size:13px',
         onclick: function () { swapDish(r, m); },
       }, ['换掉这道']));
     } else {
       acts.appendChild(h('button', {
-        class: 'btn ghost', style: 'width:auto;padding:5px 12px;font-size:13px' +
+        class: 'btn ghost', style: 'width:auto;padding:4px 12px;font-size:13px' +
                (m.cooked ? '' : ';border-color:var(--accent);color:var(--accent)'),
         onclick: function () { toggleCooked(r, m.recipeId); },
       }, [m.cooked ? '↩ 没做' : '做了']));
@@ -1210,7 +1214,7 @@ var RoundsUI = (function () {
 
     if (r.status === 'planning' && !r.solved) {
       box.appendChild(h('button', {
-        class: 'btn', style: 'margin-top:10px',
+        class: 'btn', style: 'margin-top:12px',
         onclick: function () { generate(r); },
       }, ['生成采购清单和菜']));
     }
@@ -1218,7 +1222,7 @@ var RoundsUI = (function () {
 
     // 次要操作压成一行小字 —— 以前「删除」和主流程一样醒目,
     // 生成完只看见「重新生成 / 删除」,像是在说「做完了?那就删了吧」。
-    var foot = h('div', { style: 'display:flex;gap:14px;margin-top:12px;justify-content:center' });
+    var foot = h('div', { style: 'display:flex;gap:16px;margin-top:12px;justify-content:center' });
     function link(label, fn, danger) {
       return h('button', {
         style: 'background:none;border:0;font:inherit;font-size:12px;cursor:pointer;' +

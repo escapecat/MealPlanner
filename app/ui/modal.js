@@ -142,7 +142,7 @@ var Modal = (function () {
       box.appendChild(wrap);
 
       if (o.presets && o.presets.length) {
-        box.appendChild(h('div', { class: 'chips', style: 'margin-top:10px' },
+        box.appendChild(h('div', { class: 'chips', style: 'margin-top:12px' },
           o.presets.map(function (p) {
             return h('button', {
               type: 'button',
@@ -158,7 +158,7 @@ var Modal = (function () {
         done(v);
       }
 
-      box.appendChild(h('button', { class: 'btn', style: 'margin-top:14px', onclick: submit },
+      box.appendChild(h('button', { class: 'btn', style: 'margin-top:16px', onclick: submit },
                        [o.ok || '记下']));
       if (o.allowEmpty) {
         box.appendChild(h('button', {
@@ -176,7 +176,7 @@ var Modal = (function () {
     return open(function (box, done) {
       head(box, o.title, o.body);
       box.appendChild(h('button', {
-        class: 'btn' + (o.danger ? ' danger' : ''), style: 'margin-top:14px',
+        class: 'btn' + (o.danger ? ' danger' : ''), style: 'margin-top:16px',
         onclick: function () { done(true); },
       }, [o.ok || '确定']));
       box.appendChild(h('button', {
@@ -190,7 +190,7 @@ var Modal = (function () {
   function note(o) {
     return open(function (box, done) {
       head(box, o.title, o.body);
-      box.appendChild(h('button', { class: 'btn', style: 'margin-top:14px',
+      box.appendChild(h('button', { class: 'btn', style: 'margin-top:16px',
                                     onclick: function () { done(true); } }, [o.ok || '知道了']));
     });
   }
