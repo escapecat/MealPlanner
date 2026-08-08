@@ -368,6 +368,10 @@ var Solver = (function () {
         for (var ci = 0; ci < chosen.length; ci++) {
           var cm = chosen[ci];
           if (!Meal.needsGreens(cm.nutrition, opts.target)) continue;
+          // 剩余动手时间 = 你设的上限 − 主菜已经占掉的
+          var actBudget = (opts.constraints && opts.constraints.maxActiveMinutes != null)
+            ? opts.constraints.maxActiveMinutes - (cm.variant.activeMinutes || 0)
+            : null;
           var sd = Meal.pickSide(sideCands, left, opts.target, usedRecipe, function (id, g) {
             // 为这样东西开一包会剩多少 —— 和主菜那边用的是同一套包装规格
             if (typeof Packaging === 'undefined') return 0;
@@ -375,7 +379,7 @@ var Solver = (function () {
             var o = pkgCache[id];
             if (!o) return 0;
             return Math.max(0, Math.ceil(g / o.netWeight) * o.netWeight - g);
-          });
+          }, actBudget);
           if (!sd) continue;
           cm.side = sd;
           usedRecipe[sd.recipeId] = 1;

@@ -65,9 +65,15 @@ var Meal = (function () {
   var SIDE_MAX_DIFFICULTY = 2;
   var SIDE_MAX_KCAL = 250;          // 配菜就该是轻的;重了就不是「再弄个青菜」
 
-  function isSimpleSide(variant, nutrition, target) {
+  /** @param budget 这一顿还剩多少动手时间可用(主菜已经占掉一部分)
+   *
+   * ⚠️ 你设的「单顿动手 45 分」只在挑主菜时检查过,配菜是后面挂上去的 ——
+   *    主菜 45 分 + 配菜 10 分 = 55 分,直接突破你设的上限。
+   *    实测 100 轮 400 顿里有 11 顿这样。你设了上限却不作数,比不设更糟。 */
+  function isSimpleSide(variant, nutrition, target, budget) {
     if (!variant || !nutrition) return false;
     if (variant.activeMinutes > SIDE_MAX_ACTIVE) return false;
+    if (budget != null && variant.activeMinutes > budget) return false;
     if (variant.difficulty > SIDE_MAX_DIFFICULTY) return false;
     if ((variant.potsUsed || 1) > 1) return false;
     if (nutrition.veg < 100) return false;
@@ -91,7 +97,7 @@ var Meal = (function () {
    *                     为了 200g 黄瓜开一整根。实测加配菜后浪费从 42% 涨到 48%,
    *                     全是这么涨的。主菜那边早就按边际浪费打分了,配菜也得按。
    */
-  function pickSide(pool, leftGrams, target, used, wasteOf) {
+  function pickSide(pool, leftGrams, target, used, wasteOf, budget) {
     // ⚠️ 初始分必须是 -Infinity,不能是 -1。
     //    不吃剩料的配菜得分是负数(0*10 - activeMinutes),用 -1 起步的话
     //    它们永远选不上 —— 实测 858 次调用有 549 次返回 null,
@@ -99,7 +105,7 @@ var Meal = (function () {
     var best = null, bestScore = -Infinity, bestHelps = 0;
     (pool || []).forEach(function (c) {
       if (used && used[c.recipe.id]) return;
-      if (!isSimpleSide(c.variant, c.nutrition, target)) return;
+      if (!isSimpleSide(c.variant, c.nutrition, target, budget)) return;
 
       // 这道配菜能吃掉多少还剩着的东西 / 又要为它新开多少包
       var helps = 0, newWaste = 0;

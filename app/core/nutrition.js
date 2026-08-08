@@ -116,6 +116,16 @@ var Nutrition = (function () {
 
     var wanted = gap / best.density * 100;
     var add = Math.min(wanted, best.from * (BOOST_MAX_MULT - 1), BOOST_MAX_ADD);
+
+    // ⚠️ 加量是有热量代价的,不能为了凑蛋白把一顿推成 1482 kcal ——
+    //    那是减脂目标(832)的 1.8 倍。实测有 18% 的顿数越过了 25% 宽容带。
+    //    肥牛卷 150→230g 加 15g 蛋白,同时加 300 kcal;这种就该少加或不加。
+    if (target.kcal) {
+      var room = target.kcal * 1.25 - n.kcal;
+      if (room <= 0) return null;
+      if (best.kcal100 > 0) add = Math.min(add, room / best.kcal100 * 100);
+    }
+
     add = Math.round(add / 10) * 10;
     if (add < 20) return null;              // 加不到 20g 不值得改清单
 
@@ -205,11 +215,18 @@ var Nutrition = (function () {
     //    在分数上和刚好达标一模一样 —— 一个减脂目标的人排出两倍热量的一顿,
     //    系统一声不吭,还可能再给它配盘青菜。
     //    给 25% 的宽容带(一顿吃多点很正常),超过才开始算。
+    //
+    // ⚠️ 但这一项**治不了本**。实测把权重从 0.6 加到 3.0,超宽容带的顿数
+    //    只从 18% 降到 11%,浪费反而从 20% 涨到 22% —— 因为超标的不是
+    //    「加多了」,是**那道菜本身就那么高**(越式炸春卷 1234 kcal、
+    //    肉じゃが 1263)。打分只能在候选之间挑,挑不出库里没有的东西。
+    //    取 1.5:有改善、代价小。真要解决得靠份量(菜谱克数按目标缩放),
+    //    那是另一件事,记在 PROGRESS.md 里。
     var over = 0;
     if (target.kcal && n.kcal > target.kcal * 1.25) {
       over = (n.kcal - target.kcal * 1.25) / target.kcal;
     }
-    return under + over * 0.6;
+    return under + over * 1.5;
   }
 
   return {
