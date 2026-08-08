@@ -298,6 +298,18 @@ input:focus, select:focus {
 .conf-C { background: var(--warn-dim);   color: var(--warn); }
 .conf-U { background: var(--danger-dim); color: var(--danger); }
 
+/* 状态徽章。
+   ⚠️ 和 .conf 分开 —— .conf 说的是「这条数据准不准」(A/B/C/U),
+      是这个库最需要暴露的东西。轮次状态(待采购 / 进行中 / 已完成)
+      跟数据准不准毫无关系,原来却借用了 .conf-A/.conf-B ——
+      于是「进行中」被渲染成一个「数据可信度 B 级」的徽章。
+      同一个视觉符号表示两件无关的事,是这类组件最容易烂掉的方式。 */
+.st { display: inline-block; padding: 2px var(--s2); border-radius: var(--r-full);
+      font-size: var(--t-xs); font-weight: 600; line-height: 1.5;
+      background: var(--surface-2); color: var(--text-dim); }
+.st.live { background: var(--accent-dim); color: var(--accent); }
+.st.done { background: var(--surface-2);  color: var(--text-dim2); }
+
 /* ---- 底部标签栏 ---- */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;

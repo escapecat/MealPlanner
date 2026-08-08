@@ -1232,11 +1232,20 @@ var RoundsUI = (function () {
 
   function roundCard(r, idx, total) {
     var box = h('div', { class: 'card' });
-    var head = h('div', { style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap' }, [
-      h('strong', {}, [r.createdAt.slice(5, 10).replace('-', ' / ')]),
-      h('span', { class: 'conf conf-' + (r.status === 'done' ? 'A' : 'B') },
-        [Round.STATUS[r.status] || r.status]),
-      idx === total - 1 ? h('span', { class: 'hint' }, ['最新']) : h('span', {}),
+    // ⚠️ 状态徽章原来借用 .conf(数据可信度 A/B/C/U)——
+    //    于是「进行中」被渲染成一个「数据 B 级」的徽章。
+    //    同一个视觉符号表示两件无关的事,是组件最容易烂掉的方式。
+    // ⚠️ 日期原来是 `slice(5,10).replace('-', ' / ')` = 「08 / 08」,
+    //    看着像个分数。中文里就写「8月8日」。
+    var md = r.createdAt.slice(5, 10).split('-');
+    var head = h('div', { class: 'between' }, [
+      h('div', { class: 'flex-wrap', style: 'align-items:center' }, [
+        h('strong', {}, [(+md[0]) + '月' + (+md[1]) + '日']),
+        h('span', { class: 'st' + (r.status === 'done' || r.status === 'skipped'
+                                   ? ' done' : ' live') },
+          [Round.STATUS[r.status] || r.status]),
+      ]),
+      idx === total - 1 ? h('span', { class: 'xs dim' }, ['最新']) : h('span', {}),
     ]);
     box.appendChild(head);
     box.appendChild(h('div', { style: 'margin-top:4px' }, [Round.summarize(r)]));
