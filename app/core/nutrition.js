@@ -216,7 +216,11 @@ var Nutrition = (function () {
     var cap = PER_MEAL_CAP[(ing(best.id) || {}).category];
     if (cap) add = Math.min(add, Math.max(0, cap - best.from));
 
-    add = Math.round(add / 10) * 10;
+    // ⚠️ 取整必须向下。用 Math.round 的话,上面刚按热量余量算出「最多再加 45g」,
+    //    一四舍五入就变成 50g,**把刚守住的余量又冲掉了** ——
+    //    实测 400 顿里有 38 顿只超出宽容带 0-60 kcal,好些正好卡在 1041/1042
+    //    (宽容带是 1040)。守了个寂寞。
+    add = Math.floor(add / 10) * 10;
     if (add < 20) return null;              // 加不到 20g 不值得改清单
 
     return {
@@ -365,6 +369,16 @@ var Nutrition = (function () {
     var gap = target.protein - n.protein;
     if (gap < 8) return null;                 // 差一点点不值得多买一样东西
 
+    // ⚠️ 热量余量这一条,portionBoost 里有、这里**没有** —— 又是两套标准。
+    //    后果:先加量时老老实实守着 1040 的宽容带,转头补一份 300g 北豆腐
+    //    直接顶到 1129。实测超宽容带的 58 顿里 **55 顿是加过量/补过东西的**。
+    //    补充项和加量做的是同一件事(补蛋白),凭什么一个守规矩一个不守。
+    //
+    // ⚠️ 但也不能一点余量都没有就彻底不补 —— 减脂时蛋白是最该保住的那项。
+    //    留 15% 的通融:宽容带本身已经是 1.25 倍,再放宽到 1.44 倍就太多了。
+    var room = target.kcal ? target.kcal * 1.25 * 1.15 - n.kcal : Infinity;
+    if (room <= 0) return null;
+
     var bad = {};
     (blacklist || []).forEach(function (b) { bad[b] = 1; });
     (already || []).forEach(function (b) { bad[b] = 1; });
@@ -385,6 +399,13 @@ var Nutrition = (function () {
       // 按缺口算要多少,但不超过一个正常份量的两倍 —— 补蛋白不是硬灌
       var need = Math.min(t.grams * 2,
                           Math.max(t.grams, Math.round(gap / ig.per100g.protein * 100 / 10) * 10));
+      // 热量余量放不下就少补一点;连一半份量都放不下就换下一样(它可能更划算)
+      if (ig.per100g.kcal) {
+        var fits = Math.floor(room / ig.per100g.kcal * 100 / 10) * 10;
+        if (fits < t.grams / 2) continue;
+        need = Math.min(need, fits);
+      }
+      if (need <= 0) continue;
       return {
         ingredientId: t.id, name: ig.name, grams: need, how: t.how,
         protein: Math.round(need * ig.per100g.protein / 100),

@@ -44,7 +44,11 @@ var Meal = (function () {
    *    这里只保证配菜本身是轻的(isSimpleSide 卡了它的热量)。 */
   function needsGreens(nutrition, target) {
     if (!nutrition) return false;
-    return nutrition.veg < vegFloor(target);
+    // ⚠️ 用 <=,不是 <。门槛本身已经是目标的一半(200g → 100g)——
+    //    正好卡在 100g 的那顿不该算「够了」。实测 10 顿牛丼卡在这条线上:
+    //    整顿的「蔬菜」只有一个洋葱,而洋葱算蔬菜本身就够宽容了。
+    //    差一克就不配青菜,这是判据在讨巧,不是这顿真的够。
+    return nutrition.veg <= vegFloor(target);
   }
 
   /** 一份烫青菜多少克 —— 补到门槛就行,不硬凑 */
