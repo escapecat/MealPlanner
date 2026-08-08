@@ -174,7 +174,8 @@ if (page === 'rounds') {
   if (!clickByText(/这次要做饭/)) console.log('(没找到「这次要做饭了」按钮)');
   clickByText(/记下这一次/);
   clickByText(/生成采购清单/);
-  clickByText(/买齐了|开始做饭/);
+  // 第二个参数 = 走到哪个阶段:shop(默认,待采购)| cook(已开做)
+  if ((process.argv[3] || '') === 'cook') clickByText(/买齐了|开始做饭/);
   // ⚠️ 失败提示走 Modal,而 Modal 挂在 document.body 上不在 #app 里 ——
   //    只看 #app 的话,「排不出来」表现成「点了没反应」,查半天。
   body.children.forEach(function (c) {

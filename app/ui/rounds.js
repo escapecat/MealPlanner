@@ -6,6 +6,8 @@
 var RoundsUI = (function () {
 
   var el, sheetOpen = false, draft = null, onOpenPkg = null, showBought = false;
+  // 当前阶段用不上的那半,折起来。null = 跟着 status 走,点了就记住用户的选择
+  var openSec = null;
 
   function h(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -517,9 +519,36 @@ var RoundsUI = (function () {
     });
   }
 
+  /**
+   * 一屏两件事的开关。
+   *
+   * ⚠️ 改版前采购清单和菜单**永远同时铺开** —— 一屏 242 个节点、1754 个字。
+   *    可这两件事发生在完全不同的地方:清单在超市看,菜单在灶台前看。
+   *    而轮次本来就有 status,app **知道你在哪个阶段**,却还是把两样糊在一页。
+   *
+   * ⚠️ 折起来不等于藏起来:折起的那半永远点得开 ——
+   *    「在超市里想起来看一眼这几天做什么」是真实需求,不该逼你换页。
+   */
+  function secBar(id, label, open) {
+    return h('div', {
+      class: 'list-row',
+      style: 'border:1px solid var(--border);border-radius:var(--r-md);' +
+             'margin-bottom:12px;background:var(--surface)',
+      onclick: function () { openSec = open ? '' : id; render(); },
+    }, [
+      h('div', { class: 'body' }, [h('div', { class: 'ttl' }, [label])]),
+      h('span', { class: 'dim' }, [open ? '▴' : '▸']),
+    ]);
+  }
+
   function resultView(r) {
     var s = r.solved;
     var box = h('div', { style: 'margin-top:12px' });
+
+    // 待采购 → 清单在上、菜单折起;开做之后反过来。点过折叠条就按用户的来。
+    var phase = (r.status === 'shopping' || r.status === 'planning') ? 'shop' : 'menu';
+    var which = openSec === null ? phase : openSec;
+    var shopOpen = which === 'shop', menuOpen = which === 'menu';
 
     // ⚠️ 买之前只能给估计,而且要说清楚是估的 ——
     //    包装规格 99.3% 没核实过,拿它算出「浪费 13%」再报给用户,
@@ -569,12 +598,16 @@ var RoundsUI = (function () {
     //    而同一句话上面的 note 里已经说过一遍、每行括号里还有第三遍。
     //    一屏说三次同一句告诫,等于一次都没说。
     var boughtN = done.length, allN = s.shopping.length;
-    box.appendChild(h('div', { class: 'between', style: 'margin:16px 0 8px' }, [
+    if (!shopOpen) {
+      box.appendChild(secBar('shop',
+        '采购清单 · ' + (todo.length ? '还差 ' + todo.length + ' 样' : '都买齐了'), false));
+    }
+    if (shopOpen) box.appendChild(h('div', { class: 'between', style: 'margin:16px 0 8px' }, [
       h('div', { style: 'font-weight:600' },
         [todo.length ? '还要买 ' + todo.length + ' 样' : '都买齐了']),
       h('div', { class: 'xs dim' }, [boughtN + ' / ' + allN]),
     ]));
-    if (allN) {
+    if (allN && shopOpen) {
       box.appendChild(h('div', { class: 'prog', style: 'margin-bottom:12px' }, [
         h('i', { style: 'width:' + Math.round(boughtN / allN * 100) + '%' }),
       ]));
@@ -672,7 +705,7 @@ var RoundsUI = (function () {
     }
 
     // 一个容器装所有行,行之间用细线 —— 不是每行自己一张卡片
-    if (todo.length) {
+    if (todo.length && shopOpen) {
       var todoList = h('div', { class: 'list' });
       todo.forEach(function (it) { todoList.appendChild(shopRow(it, false)); });
       box.appendChild(todoList);
@@ -778,16 +811,21 @@ var RoundsUI = (function () {
       ' · 按最容易坏的先吃排 · 时间是估的',
     ]));
 
+    if (!menuOpen) {
+      box.appendChild(secBar('menu', '这几天做什么 · ' + (s.meals || []).length + ' 顿', false));
+    }
     var lastDay = null;
     plan.forEach(function (p, i) {
-      if (p.day !== lastDay) {
+      if (p.day !== lastDay && menuOpen) {
         box.appendChild(h('div', {
           style: 'font-weight:600;font-size:14px;margin:16px 0 4px;' +
                  'padding-top:12px;border-top:1px solid var(--border)',
         }, ['第 ' + p.day + ' 天']));
         lastDay = p.day;
       }
-      box.appendChild(mealCard(r, p.meal, i, p, slotLabel(p.slot, r.input.perDay)));
+      if (menuOpen) {
+        box.appendChild(mealCard(r, p.meal, i, p, slotLabel(p.slot, r.input.perDay)));
+      }
     });
 
     box.appendChild(nextStep(r));
