@@ -74,6 +74,25 @@ var Modal = (function () {
                          onclick: function () { done(null); } }, [label || '取消']);
   }
 
+  /** 多层菜单里的「返回上一层」。
+   *
+   * ⚠️ 第一版根本没有这个概念 —— 我只想着「选完就走」,
+   *    可 菜名 → 食材 → 某一样 → 改用量 是四层,中途想退一步只能点「取消」,
+   *    而取消是把整串关掉、回到页面。改错一个选项就得从头点四次。
+   *
+   * 约定:返回 resolve 成 Modal.BACK,调用方自己决定回哪一层。
+   * 不做成弹层内部的历史栈 —— 那样每个调用方都得按同一种结构组织,
+   * 反而更难写;交给调用方一句 if 判断更直白。
+   */
+  var BACK = '__modal_back__';
+  function backBtn(done, label) {
+    return h('button', {
+      class: 'btn ghost',
+      style: 'margin-top:8px;color:var(--text-dim)',
+      onclick: function () { done(BACK); },
+    }, ['‹ ' + (label || '返回')]);
+  }
+
   /**
    * 选择题 —— 一个动作一个按钮。
    * @param o.options [{key, label, hint, danger}]
@@ -93,6 +112,7 @@ var Modal = (function () {
         ]));
       });
       box.appendChild(list);
+      if (o.back) box.appendChild(backBtn(done, o.backLabel));
       box.appendChild(cancelBtn(done));
     });
   }
@@ -146,6 +166,7 @@ var Modal = (function () {
           onclick: function () { done(''); },
         }, [o.emptyLabel || '留空']));
       }
+      if (o.back) box.appendChild(backBtn(done, o.backLabel));
       box.appendChild(cancelBtn(done));
     });
   }
@@ -174,7 +195,8 @@ var Modal = (function () {
     });
   }
 
-  return { pick: pick, ask: ask, confirm: confirm, note: note, close: close };
+  return { pick: pick, ask: ask, confirm: confirm, note: note, close: close,
+           BACK: BACK };
 })();
 
 if (typeof module !== 'undefined') module.exports = Modal;

@@ -146,6 +146,38 @@ pending.push(
   })()
 );
 
+
+// --- 返回 vs 取消:必须分得开 ---
+//
+// ⚠️ 多层菜单里(菜名 → 食材 → 某一样 → 改用量)第一版只有「取消」,
+//    而取消是把整串关掉回到页面 —— 点错一个选项就得从头再点四次。
+//    返回 resolve 成 Modal.BACK,和取消的 null 分开,调用方才知道该回哪一层。
+pending.push(
+  (function () {
+    var p = Modal.pick({ title: 'x', back: true, options: [{ key: 'a', label: '选项A' }] });
+    sheet().click('返回');
+    return p.then(function (v) {
+      ok(v === Modal.BACK, '点「返回」→ Modal.BACK,不会被当成选了某一项');
+    });
+  })()
+);
+pending.push(
+  (function () {
+    var p = Modal.ask({ title: 'x', type: 'number', back: true });
+    sheet().click('返回');
+    return p.then(function (v) { ok(v === Modal.BACK, 'ask 也认返回'); });
+  })()
+);
+pending.push(
+  (function () {
+    var p = Modal.pick({ title: 'x', options: [{ key: 'a', label: '选项A' }] });
+    sheet().click('取消');
+    return p.then(function (v) {
+      ok(v === null && Modal.BACK !== null, '不传 back 时没有返回按钮,取消仍然是 null');
+    });
+  })()
+);
+
 Promise.all(pending).then(function () {
   console.log(fails ? '\n' + fails + ' 条挂了' : '\n全过');
   process.exit(fails ? 1 : 0);
