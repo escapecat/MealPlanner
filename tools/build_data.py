@@ -133,6 +133,47 @@ def js(obj):
     return json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
 
 
+
+# ---------------------------------------------------------------------------
+# 备注拆成两半:给做饭的人看的 / 给建库的人看的
+#
+# ⚠️ 1149 条备注里混着两种完全不同的东西:
+#     做法提示  「炒糖色到枣红立刻下肉,全程不加生水」        → 该显示
+#     建库笔记  「牺牲:肥瘦比例由厂家定…单位成本约为自炖的 2 倍。
+#                 主表备注写的『只适合有空的周末』这条限制被解除」→ 不该显示
+#               「⚠️ 牛腱原值 90g 是熟重,按本文件附录『熟重约为生重…』」→ 不该显示
+#
+#    第二种是我建库时写给自己看的设计理由和数据加工说明,它们引用「本文件」
+#    「附录」「主表」和反引号里的 id —— 全是内部产物。出现在做饭页面上,
+#    读起来就像 app 在跟你解释它自己的实现。
+#
+#    **markdown 正本一个字不动**,拆分只发生在这里:note 只留做法提示,
+#    其余进 devNote(仍然留在数据里,只是界面不显示)。不删,只分流。
+DEV_MARKERS = ['本文件', '附录', '设计上', '牺牲', '换来的是', '单位成本',
+               '原值', '熟重', '生重', '这一档', '这一行', '障碍是', '主表',
+               '省掉', '解锁', '档位', '补录', '按字典', '代价', '裁决',
+               '折叠', '采购清单', '全库', '外包', 'assembled', 'readymade',
+               'scratch', '⚠️']
+
+# 反引号包的 id、以及 `CX-046` 这种菜谱交叉引用 —— 做菜提示里不会出现代码格式,
+# 出现了就说明这句话是写给建库的人看的
+_DEV_RE = re.compile(r'`|[A-Z]{2}-\d{3}')
+
+def _is_dev(seg):
+    return any(m in seg for m in DEV_MARKERS) or bool(_DEV_RE.search(seg))
+
+def split_note(text):
+    """→ (给人看的做法提示, 建库笔记)。切在第一个出现建库特征的句子处。"""
+    if not text:
+        return None, None
+    parts = re.split(r'(?<=[。;；])', text)
+    keep = []
+    for i, seg in enumerate(parts):
+        if _is_dev(seg):
+            return (''.join(keep).strip() or None), ''.join(parts[i:]).strip()
+        keep.append(seg)
+    return text.strip() or None, None
+
 def emit(fname, varname, rows, note):
     os.makedirs(OUT, exist_ok=True)
     p = os.path.join(OUT, fname)
@@ -337,7 +378,8 @@ def build_recipes(known_ids):
                         'potsUsed': int(num(r[10], 1) or 1),
                         'keepsOvernight': yes(r[14]),
                         'raw': yes(r[16]),
-                        'note': r[17],
+                        'note': split_note(r[17])[0],
+                        'devNote': split_note(r[17])[1],
                         'verified': False,
                         'variants': [{
                             'prepLevel': 'scratch',
@@ -348,7 +390,8 @@ def build_recipes(known_ids):
                             'aheadOfTime': r[9] if r[9] not in ('—', '-', '') else None,
                             'potsUsed': int(num(r[10], 1) or 1),
                             'equipmentRequired': [x.strip() for x in r[11].split('+') if x.strip() and x.strip() != '—'],
-                            'note': r[17],
+                            'note': split_note(r[17])[0],
+                            'devNote': split_note(r[17])[1],
                         }],
                     }
                     recipes[r[0]] = rec
@@ -369,7 +412,8 @@ def build_recipes(known_ids):
                         'aheadOfTime': r[6] if r[6] not in ('—', '-', '') else None,
                         'potsUsed': int(num(r[7], 1) or 1),
                         'equipmentRequired': [x.strip() for x in r[8].split('+') if x.strip() and x.strip() != '—'],
-                        'note': r[10],
+                        'note': split_note(r[10])[0],
+                        'devNote': split_note(r[10])[1],
                     })
 
     # 悬空引用自查 —— 生成阶段就该发现,别留到运行时

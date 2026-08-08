@@ -844,9 +844,26 @@ var RoundsUI = (function () {
       card.appendChild(sideBox);
     }
 
+    // 备注只留做法提示 —— 建库笔记(「牺牲:…单位成本约为自炖的 2 倍」这类)
+    // 在转换器里就分流进 devNote 了,界面拿不到。
+    // 剩下几条长的是真做菜建议,折叠起来点开看,不按字数一刀切删掉。
     var note = (rv && rv.variant.note) || (rv && rv.recipe.note);
     if (note && note !== '—') {
-      card.appendChild(h('div', { class: 'hint', style: 'margin-top:8px' }, ['· ' + note]));
+      if (note.length <= 60) {
+        card.appendChild(h('div', { class: 'hint', style: 'margin-top:8px' }, ['· ' + note]));
+      } else {
+        var full = false;
+        var nb = h('div', { class: 'hint', style: 'margin-top:8px;cursor:pointer' });
+        var paint = function () {
+          nb.innerHTML = '';
+          nb.appendChild(Dom.text('· ' + (full ? note : note.slice(0, 56) + '…')));
+          nb.appendChild(h('span', { style: 'color:var(--accent);margin-left:6px' },
+                           [full ? '收起' : '展开']));
+        };
+        nb.addEventListener('click', function () { full = !full; paint(); });
+        paint();
+        card.appendChild(nb);
+      }
     }
 
     // ⚠️ 调料也得列。早先卡片上只有一句「缺 3 样调料」——
