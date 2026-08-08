@@ -20,11 +20,33 @@ var Timing = (function () {
   // 145 种写法里 135 种带时长,剩下 10 种是纯动作(「焯水」「上浆」)—— 记 0 不瞎猜。
   var DUR = /(\d+(?:\.\d+)?)\s*(小时|h|分钟|分)/g;
 
+  /** ⚠️ 「隔夜更佳」不是「必须隔夜」。
+   *
+   *    库里 20 个带「隔夜」的写法里有 5 个其实是可选的:
+   *      醉鸡腿      冷藏浸醉汁 1小时(隔夜更佳)   ← 一小时就能吃
+   *      越式烤猪扒饭  腌4小时或隔夜               ← 四小时就行
+   *      红酒炖牛肉   红酒腌隔夜更佳
+   *      金枪鱼冷意面  冷藏隔夜更佳
+   *    第一版一律判成「必须隔夜」,于是「不接受隔夜准备」把它们全滤掉了 ——
+   *    而它们本来今天就能做。判定要看**语气**,不能只看关键词在不在。
+   */
+  var OPTIONAL = /更佳|更好|最好|建议|亦可|也可|或隔夜/;
+
   /** @return {minutes, overnight, text} */
   function parseAhead(text) {
     if (!text || text === '—') return { minutes: 0, overnight: false, text: null };
-    // 隔夜没法用分钟表达 —— 它的意思是「今天做不成」,单独标出来
     if (/隔夜|过夜|一夜|前一天/.test(text)) {
+      // 可选的:退回去按文字里给出的具体时长算(「1小时」「4小时」),
+      // 没给时长就当没有额外要求 —— 反正不是硬性的。
+      if (OPTIONAL.test(text)) {
+        var m2 = 0, y;
+        DUR.lastIndex = 0;
+        while ((y = DUR.exec(text)) !== null) {
+          m2 += parseFloat(y[1]) * (/小时|h/.test(y[2]) ? 60 : 1);
+        }
+        return { minutes: Math.round(m2), overnight: false, text: text, optional: true };
+      }
+      // 真·硬性隔夜:没法用分钟表达,它的意思是「今天做不成」
       return { minutes: 0, overnight: true, text: text };
     }
     var m = 0, x;

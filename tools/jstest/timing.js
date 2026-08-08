@@ -31,10 +31,24 @@ if (muer) {
      Timing.fmt(tm.eatIn) + '(含泡发 30 分)');
 }
 
+// ⚠️ 「隔夜更佳」不是「必须隔夜」—— 语气不同,后果差很远。
+//    醉鸡腿写的是「冷藏浸醉汁 1小时(隔夜更佳)」,一小时就能吃,
+//    第一版一律判成硬性隔夜,「不接受隔夜准备」把它整个滤掉了。
+ok(Timing.parseAhead('冷藏浸醉汁 1小时(隔夜更佳)').overnight === false,
+   '「1小时(隔夜更佳)」不算必须隔夜');
+ok(Timing.parseAhead('冷藏浸醉汁 1小时(隔夜更佳)').minutes === 60,
+   '而且退回按 1 小时算,不是当成 0');
+ok(Timing.parseAhead('腌4小时或隔夜').overnight === false, '「4小时或隔夜」不算必须隔夜');
+ok(Timing.parseAhead('腌隔夜').overnight === true, '「腌隔夜」是真的必须隔夜');
+ok(Timing.parseAhead('泡豆隔夜').overnight === true, '「泡豆隔夜」也是');
+
+// 蛋炒饭:「隔夜」原本写在提前准备列,可它在食材列里已经是「隔夜饭[rice]」了 ——
+// 同一个要求写了两遍,第二遍被当成「你必须提前一天动手」。
+// 有剩饭就现在能做,没有就煮好摊凉,不是隔夜。已改数据源。
 var fan = byName('蛋炒饭');
 if (fan) {
-  ok(Timing.ofMeal(fan.variants[0], null).overnight,
-     '蛋炒饭标出「要隔夜」—— 今天想吃是来不及的');
+  ok(Timing.ofMeal(fan.variants[0], null).overnight === false,
+     '蛋炒饭不再被判成「今天做不成」');
 }
 
 ok(Timing.parseAhead('糯米泡2小时').minutes === 120, '「2小时」解析成 120 分');

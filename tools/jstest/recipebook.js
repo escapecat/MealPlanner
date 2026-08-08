@@ -111,14 +111,24 @@ RecipeBook.save(t2.id, { add: [{ id: 'potato', grams: 200, role: 'side' }] }, lv
 var pots = get(t2.id).variants[0].ingredients.filter(function (i) { return i.ids[0] === 'potato'; });
 ok(pots.length === 1, '同一样不会被加两次');
 
-// 提前准备可改 —— 蛋炒饭不一定非要隔夜饭
-var fan = RECIPES.filter(function (r) { return r.name === '蛋炒饭'; })[0];
-ok(!!fan, '库里有蛋炒饭');
+// 提前准备可改 —— 用一道**真的**要隔夜的菜来测。
+// ⚠️ 这里原本写死用蛋炒饭,后来发现它根本不该标隔夜(食材列已经是「隔夜饭[rice]」,
+//    提前准备列又写一遍),改了数据源之后这条断言就挂了 —— 挂得对。
+//    测试不该把某道菜的具体数据焊死在断言里,该从库里现找一个符合条件的。
+var fan = RECIPES.filter(function (r) {
+  return r.type !== 'prep' && (r.variants || []).some(function (v) {
+    return Timing.ofMeal(v, null).overnight;
+  });
+})[0];
+ok(!!fan, '库里有真要隔夜的菜(' + (fan ? fan.name : '?') + ')');
 if (fan) {
-  ok(Timing.ofMeal(fan.variants[0], null).overnight === true, '蛋炒饭默认标着要隔夜');
-  RecipeBook.save(fan.id, { aheadOfTime: null }, fan.variants[0].prepLevel);
-  ok(Timing.ofMeal(get(fan.id).variants[0], null).overnight === false,
-     '清掉「隔夜」之后,「不接受隔夜」那条约束就不再挡它了');
+  var lv = (fan.variants || []).filter(function (v) {
+    return Timing.ofMeal(v, null).overnight;
+  })[0];
+  RecipeBook.save(fan.id, { aheadOfTime: null }, lv.prepLevel);
+  var after = get(fan.id).variants.filter(function (v) { return v.prepLevel === lv.prepLevel; })[0];
+  ok(Timing.ofMeal(after, null).overnight === false,
+     '清掉「隔夜」之后,「不接受隔夜准备」那条约束就不再挡它了');
 }
 
 RecipeBook.reset();
