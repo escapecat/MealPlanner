@@ -167,7 +167,7 @@ var RoundsUI = (function () {
               else draft.overrides.allowOvernight = v;
             },
             [{ v: false, t: '不接受' }, { v: true, t: '可以' }]),
-        h('div', { class: 'hint' }, ['蛋炒饭要隔夜冷饭、泡豆要泡一晚 —— 共 24 个变体']),
+        h('div', { class: 'hint' }, ['泡豆要泡一晚、腌隔夜的酱牛肉 —— 共 19 个变体']),
       ]));
 
       more.appendChild(h('div', { class: 'note' }, [
@@ -801,10 +801,16 @@ var RoundsUI = (function () {
     // 提前准备必须显眼 —— 「米泡20分钟」你要是开火前才看到就已经晚了。
     var note0 = Timing.startNote(tm);
     if (note0) {
+      // ⚠️ 说清楚**这段可以提前做**,别让人以为要干等着。
+      //    腌 30 分钟不需要你守着,而且完全可以在做上一顿的时候顺手腌上 ——
+      //    盐焗鸡腿这类「动手 15 分、等 2 小时」的菜其实最省事,
+      //    可页面上只写「1 小时 30 分能吃上」的话,看着就像个大工程。
       card.appendChild(h('div', {
         class: 'note warn', style: 'margin-top:8px',
-      }, [tm.overnight ? note0 : (tm.aheadText + ' —— 比想吃的时间提前 ' +
-                                  Timing.fmt(tm.eatIn) + '动手')]));
+      }, [tm.overnight ? note0
+          : (tm.aheadText + ' —— 这段不用守着,' +
+             '**做上一顿的时候顺手弄上**就不用等;从零开始的话提前 ' +
+             Timing.fmt(tm.eatIn) + '动手')]));
     }
 
     var ings = mealIngredients(m);

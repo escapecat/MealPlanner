@@ -454,7 +454,12 @@ var Solver = (function () {
       //    于是一道菜跟自己抢,抽到哪档全看运气,经常抽到要和面的那档。
       //    库里 13 道要醒面的菜有 11 道都有现成档,却照样排出手工版。
       //
-      //    空等按三折算:焖着的时候你是自由的,不像动手那样占人。
+      //    ⚠️ 空等只按 0.15 折算,不是三折。
+      //       盐焗鸡腿动手 15 分钟(腌一下扔进锅),台式盐酥鸡 20 分,adobo 15 分 ——
+      //       它们是**最省事的一类**,可空等罚重了就全被挤掉。
+      //       而且腌制/泡发根本不用守着,还能和上一顿的烹饪重叠。
+      //       **动手时间才是真成本,空等只是排期问题。**
+      //       实测 0.30 → 0.15:动手中位不变(15 分),空等中位 5 → 10 分,浪费反而降 2 个点。
       //    权重压得比浪费和营养都低 —— 这是「同等条件下选省事的」,
       //    不是「为了省事什么都不管」。
       var effort = 0;
@@ -462,7 +467,7 @@ var Solver = (function () {
         var t = (typeof Timing !== 'undefined')
                 ? Timing.ofMeal(c.variant, c.side && c.side._cand ? c.side._cand.variant : null)
                 : { active: c.variant.activeMinutes || 0, idle: 0 };
-        effort += t.active + t.idle * 0.3;
+        effort += t.active + t.idle * 0.15;
       });
       effort = effort / chosen.length;
 

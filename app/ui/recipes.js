@@ -600,16 +600,17 @@ var RecipesUI = (function () {
         rows.slice().sort(function (a, b) {
           return a.recipe.name.localeCompare(b.recipe.name, 'zh');
         }).forEach(function (e) {
-          card.appendChild(h('div', {
-            style: 'padding:7px 0;border-bottom:1px solid var(--border)',
-          }, [
-            h('div', {}, [e.recipe.name]),
-            h('div', { class: 'hint', style: 'color:var(--warn)' }, [
-              e.variants.map(function (v) {
-                return v.prepLevel + ':' + v.reasons.join(' / ');
-              }).join('    |    '),
-            ]),
+          // ⚠️ 这里用 dishRow,不自己画一行。
+          //    排除页最该能点进去看和改 —— 你看到「难度 5,超过 3」,
+          //    下一步想的就是「那这道到底是什么」和「能不能按我的情况调」。
+          //    第一版只画了菜名 + 原因,是个死胡同:看见了却什么也做不了。
+          var row = dishRow(e.recipe);
+          row.appendChild(h('div', { class: 'hint', style: 'color:var(--warn)' }, [
+            e.variants.map(function (v) {
+              return v.prepLevel + ':' + v.reasons.join(' / ');
+            }).join('    |    '),
           ]));
+          card.appendChild(row);
         });
       }
       w.appendChild(card);

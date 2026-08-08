@@ -206,7 +206,21 @@ if (loaded === srcs.length) {
         ok(t.indexOf('厨具不够') >= 0 || t.indexOf('难度') >= 0,
            '切到「排除的」列出了原因分组');
         var grp = clickable(node, '厨具不够');
-        if (grp) { fire(grp); ok(txt(node).length > 0, '展开一个原因分组没有崩'); }
+        if (grp) {
+          fire(grp);
+          ok(txt(node).length > 0, '展开一个原因分组没有崩');
+          // ⚠️ 排除页的菜也要能点开看详情 —— 光看见「难度 5,超过 3」
+          //    却点不进去是死胡同。这条路径第一版没有。
+          var rows = node.all().filter(function (c) {
+            return (c.handlers.click || []).length && txt(c).indexOf('做不了') >= 0;
+          });
+          ok(rows.length > 0, '排除页里的菜是可点的(' + rows.length + ' 行)');
+          if (rows.length) {
+            fire(rows[0]);
+            ok(txt(node).indexOf('搜做法') >= 0 || txt(node).indexOf('按我的情况改') >= 0,
+               '点开之后能看到详情和「按我的情况改」');
+          }
+        }
       }
     } catch (e) {
       ok(false, '「排除的」视图抛异常:' + e.message);

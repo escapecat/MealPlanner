@@ -350,7 +350,8 @@ var SettingsUI = (function () {
       seg(function () { return cfg.allowOvernight !== false; },
           function (v) { saveConfig({ allowOvernight: v }); },
           [{ v: false, t: '不接受' }, { v: true, t: '可以' }]),
-      '蛋炒饭要隔夜冷饭、泡豆要泡一晚 —— 这类共 24 个变体。选「不接受」就不给你排'));
+      '泡豆要泡一晚、腌隔夜的酱牛肉 —— 这类共 19 个变体。选「不接受」就不给你排。' +
+      '注意「隔夜更佳」那种不算 —— 那是可选的,不会被拦'));
 
     box.appendChild(blacklistEditor(cfg));
 
