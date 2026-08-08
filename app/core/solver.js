@@ -18,8 +18,20 @@ var Solver = (function () {
     return INGREDIENTS.filter(function (i) { return i.id === id; })[0] || null;
   }
 
+  /** 蛋白密度门槛 —— 和 mainProteinOf 用的是同一个数,不能各写各的。 */
+  var PROTEIN_DENSITY_MIN = 10;
+
   function isProtein(i) {
-    return i && ['水产', '畜肉', '禽肉', '内脏', '蛋', '豆制品', '加工肉'].indexOf(i.category) >= 0;
+    if (!i || ['水产', '畜肉', '禽肉', '内脏', '蛋', '豆制品', '加工肉'].indexOf(i.category) < 0) {
+      return false;
+    }
+    // ⚠️ 光看类别不够,**又是一处「两套标准」**。
+    //    猪五花属于「畜肉」,可它 508 kcal / 蛋白 9g —— 阶段一把它当成一样蛋白买回来,
+    //    阶段二的主菜门槛(蛋白 ≥ 目标 60%)却一道五花肉的菜都不认。
+    //    实测 seed 7:阶段一挑了「猪五花 + 鸡胸肉」两样蛋白,能当主菜的只剩鸡胸一样,
+    //    于是四顿全是鸡胸 —— **不是求解器爱吃鸡胸,是篮子里只有鸡胸**。
+    //    「一样主料最多两顿」那条硬约束在这种局面下只能退化放行,拦不住。
+    return !i.per100g || (i.per100g.protein || 0) >= PROTEIN_DENSITY_MIN;
   }
   function isVeg(i) {
     return i && (i.countsAsVeg === true ||
@@ -178,7 +190,10 @@ var Solver = (function () {
     // 按 ceil(N/2) 算,8 份会买 4 蛋白 + 5 蔬菜 = 9 样,生鲜浪费 46%;
     // 收到 3 + 4 的上限之后,同样 8 份只买 3 + 4,每样覆盖更多顿,零头摊薄。
     // 这也正是「主料复用、做法不重复」—— 少买几样、多变几种做法,而不是反过来。
-    var nProtein = Math.min(3, Math.max(1, Math.ceil(servings / 3)));
+    // ⚠️ 和「一样主料最多两顿」是配套的:4 顿 ÷ 每样最多 2 顿 = **至少** 2 样。
+    //    正好卡 2 样的话,只要有一样在阶段二被别的约束筛掉(忌口/厨具/难度),
+    //    剩下那样就得独扛四顿 —— 硬约束只能退化放行。多买一样是那条约束的余量。
+    var nProtein = Math.min(3, Math.max(2, Math.ceil(servings / 3) + 1));
     var nVeg = Math.min(4, Math.max(2, Math.ceil(servings / 2)));
     // 要求候选至少能进 6 道菜 —— 太冷门的买回去没处使
     take(candidates(isProtein), nProtein, PROTEIN_PER_SERVING, 'protein', 6);
@@ -241,6 +256,20 @@ var Solver = (function () {
     return { items: items, over: over };
   }
 
+  /** 这道菜的「主蛋白源」是哪样 —— 蛋白密度最高的那个主料。
+   *  用来卡「一样主料最多两顿」,算一次挂在候选上,不在 600 次采样里重算。 */
+  function mainProteinOf(v) {
+    var best = null;
+    (v.ingredients || []).forEach(function (it) {
+      if (it.role !== 'main') return;
+      var i = ing(it.ids[0]);
+      if (!i || !i.per100g || !i.per100g.protein) return;
+      if (i.per100g.protein < PROTEIN_DENSITY_MIN) return;
+      if (!best || i.per100g.protein > best.d) best = { id: i.id, d: i.per100g.protein };
+    });
+    return best ? best.id : null;
+  }
+
   function stage2(stage1Result, servings, opts) {
     opts = opts || {};
     var have = {};
@@ -280,6 +309,7 @@ var Solver = (function () {
                                 ? Nutrition.ofMeal(v) : null,
                      // 选了这道菜,要为它**额外开几包**、每包剩多少
                      extra: extraShopping(v, budget, pkgCache0),
+                     mainProt: mainProteinOf(v),
                      missing: (typeof Pantry !== 'undefined')
                               ? Pantry.missingSeasonings(v).length : 0 });
       });
@@ -361,10 +391,35 @@ var Solver = (function () {
       var needSet = {};
       Object.keys(budget).forEach(function (id) { needSet[id] = 1; });
 
+      // 一样主料最多两顿。
+      //
+      // ⚠️ 这条**曾经是打分项**(mainRepeat * 60),不管用。加了采购惩罚
+      //    (extraItems/extraOver)之后两者直接对拉:四顿共用一样主料能把
+      //    采购从 11 样压到 6 样,省下的分远超重复的罚 ——
+      //    于是「≥3 顿同一样主料」从 10/100 反弹到 **66/100**,
+      //    排出「猪肉末 / 猪肉末 / 猪肉末 / 猪肉末」。
+      //    把权重从 60 加到 200 能压到 22/100,但浪费从 19% 涨回 27%、
+      //    采购从 8 样涨回 11 样 —— 等于把采购惩罚的收益全吐回去,再往上还饱和。
+      //
+      //    两个惩罚对拉谁也赢不了,就是「**惩罚是错的工具**」的信号:
+      //    四顿全是猪肉末不是该定价的取舍,是不能接受。和主菜蛋白门槛一样,
+      //    该当约束卡在选菜这一步,而不是事后打分。
+      //
+      // ⚠️ 但**不能卡死**(主菜门槛那次的教训):池子薄的时候硬卡会让整轮排不出来。
+      //    所以先只在达标的里面选,凑不满再放开 —— 宁可重复,不能没有。
+      var MAX_SAME_MAIN = 2;
+      var mainUsed = {};
+
       while (chosen.length < servings && avail.length) {
         var weights = [], total = 0;
+        var strict = avail.filter(function (c) {
+          return !c.mainProt || (mainUsed[c.mainProt] || 0) < MAX_SAME_MAIN;
+        }).length >= 1;
         for (var a = 0; a < avail.length; a++) {
           var cc = avail[a], helps = 0;
+          if (strict && cc.mainProt && (mainUsed[cc.mainProt] || 0) >= MAX_SAME_MAIN) {
+            weights.push(0); continue;
+          }
           for (var q = 0; q < cc.variant.ingredients.length; q++) {
             var x = cc.variant.ingredients[q];
             for (var z = 0; z < x.ids.length; z++) {
@@ -421,6 +476,7 @@ var Solver = (function () {
         chosen.push(Object.assign({}, got));
         usedRecipe[got.recipe.id] = 1;
         methods[got.recipe.method] = 1;
+        if (got.mainProt) mainUsed[got.mainProt] = (mainUsed[got.mainProt] || 0) + 1;
         for (var q2 = 0; q2 < got.variant.ingredients.length; q2++) {
           var xx = got.variant.ingredients[q2];
           for (var z2 = 0; z2 < xx.ids.length; z2++) {
@@ -713,7 +769,7 @@ var Solver = (function () {
       var score = (1 - wasteRatio) * 100
                 + Math.min(methodCount, servings) * 8
                 + Math.min(flavorCount, servings) * 8
-                - mainRepeat * 60       // 第三顿起的同一样主料
+                - mainRepeat * 30       // 第三顿起的同一样主料
                 // 多拎回来一样东西 / 其中「剩的比用的多」的。权重扫过一遍
                 // (样数中位 · 买一包用一点 · 生鲜浪费 · 100 轮组合数):
                 //    0/0    → 12 样  5 样  29%  64 种

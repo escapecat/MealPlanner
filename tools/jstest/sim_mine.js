@@ -4,7 +4,9 @@ var APP = path.join(process.cwd(), 'app');
 global.INGREDIENTS = require(path.join(APP, 'data/ingredients.js'));
 global.RECIPES = require(path.join(APP, 'data/recipes.js'));
 global.PACKAGES = require(path.join(APP, 'data/packages.js'));
-var db = {};
+var db = { staples: ['rice','brown_rice','foxtail_millet','sweet_potato']
+             .map(function (id) { return { id: id }; }),
+           staplesMigrated: true, staplesConfirmed: true };
 global.Store = { get: function (k, f) { return db[k] !== undefined ? db[k] : (f === undefined ? null : f); },
                  set: function (k, v) { db[k] = v; } };
 global.Equipment = require(path.join(APP, 'core/equipment.js'));
@@ -48,6 +50,7 @@ for (var seed = 0; seed < N; seed++) {
     return { name: c.recipe.name, flavor: (c.recipe.flavor || [])[0] || '—',
              method: c.recipe.method,
              scale: c.scale, boost: c.boost, topUp: c.topUp, side: c.side,
+             staple: n.staple,
              kcal: Math.round(kcal), pro: Math.round(pro), veg: Math.round(veg),
              active: t.active, eatIn: t.eatIn };
   });
@@ -59,6 +62,7 @@ for (var seed = 0; seed < N; seed++) {
     console.log('\n── 轮' + seed + ' ' + '─'.repeat(50));
     meals.forEach(function (m, i) {
       var s = '  ' + (i + 1) + '. ' + m.name + ' 〔' + m.flavor + '·' + m.method + '〕';
+      if (m.staple) s += ' + ' + m.staple.name + m.staple.grams + 'g';
       if (m.scale) s += ' [缩 ' + m.scale.cuts.map(function(x){return x.name+' '+x.from+'→'+x.to+'g';}).join(' · ') + ']';
       if (m.boost) s += ' [' + m.boost.name + ' ' + m.boost.from + '→' + m.boost.to + 'g]';
       if (m.side) s += ' + ' + m.side.name;
