@@ -82,5 +82,46 @@ var raw = JSON.stringify(mem.recipeOverrides);
 ok(raw.length < 300, '存下来的是 diff（' + raw.length + ' 字节），不是整道菜的拷贝');
 ok(raw.indexOf(target.name) < 0, 'diff 里不含菜名等原始数据 —— 菜谱库以后更新了，校准照样贴得上');
 
+// --- 食材增删 ---
+//
+// ⚠️ 只给「改克数」是不够的。真实的调整多半是「这道我不放香菜」
+//    「我做红烧肉会加土豆」—— 那是增删,不是改数。
+RecipeBook.reset();
+var t2 = RECIPES.filter(function (r) {
+  return r.type !== 'prep' && r.variants[0].ingredients.length >= 3;
+})[0];
+var lvl = t2.variants[0].prepLevel;
+var n0 = t2.variants[0].ingredients.length;
+var dropId = t2.variants[0].ingredients[n0 - 1].ids[0];
+
+RecipeBook.save(t2.id, { remove: [dropId] }, lvl);
+var after1 = get(t2.id).variants[0].ingredients;
+ok(after1.length === n0 - 1, t2.name + '：去掉一样食材（' + n0 + ' → ' + after1.length + '）');
+ok(!after1.some(function (i) { return i.ids[0] === dropId; }), '去掉的那样真的不在了');
+
+RecipeBook.save(t2.id, { add: [{ id: 'potato', grams: 120, role: 'side' }] }, lvl);
+var after2 = get(t2.id).variants[0].ingredients;
+var added = after2.filter(function (i) { return i.ids[0] === 'potato'; })[0];
+ok(!!added, '加进一样食材（土豆）');
+ok(!!added && added.grams === 120 && added.qty === 120,
+   '加的那样 grams 和 qty 都填好了（采购清单按 grams 走,缺了就买不到）');
+ok(!!added && added.userAdded === true, '标了 userAdded —— 界面上要能看出是你加的');
+
+RecipeBook.save(t2.id, { add: [{ id: 'potato', grams: 200, role: 'side' }] }, lvl);
+var pots = get(t2.id).variants[0].ingredients.filter(function (i) { return i.ids[0] === 'potato'; });
+ok(pots.length === 1, '同一样不会被加两次');
+
+// 提前准备可改 —— 蛋炒饭不一定非要隔夜饭
+var fan = RECIPES.filter(function (r) { return r.name === '蛋炒饭'; })[0];
+ok(!!fan, '库里有蛋炒饭');
+if (fan) {
+  ok(Timing.ofMeal(fan.variants[0], null).overnight === true, '蛋炒饭默认标着要隔夜');
+  RecipeBook.save(fan.id, { aheadOfTime: null }, fan.variants[0].prepLevel);
+  ok(Timing.ofMeal(get(fan.id).variants[0], null).overnight === false,
+     '清掉「隔夜」之后,「不接受隔夜」那条约束就不再挡它了');
+}
+
+RecipeBook.reset();
+
 console.log(fails ? '\n' + fails + ' 条挂了' : '\n全过');
 process.exit(fails ? 1 : 0);

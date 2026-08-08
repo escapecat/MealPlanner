@@ -193,13 +193,15 @@ var RecipesUI = (function () {
         { key: 'total', label: '多久能吃上', hint: '现在记 ' + v.totalMinutes + ' 分(不含提前准备)' },
         { key: 'difficulty', label: '难度', hint: '现在记 ' + v.difficulty + ' —— 对你来说呢?' },
         { key: 'spicy', label: '辣度', hint: '现在记 ' + (['不辣', '微辣', '中辣', '重辣'][r.spicy] || r.spicy) },
+        { key: 'ahead', label: '提前准备',
+          hint: v.aheadOfTime ? '现在记「' + v.aheadOfTime + '」' : '现在记「不用提前」' },
       ].concat(
         (r.equipmentRequired || []).length
           ? [{ key: 'equip', label: '要用的厨具', hint: '现在记 ' + r.equipmentRequired.join(' + ') }]
           : []
       ).concat(
         (v.ingredients || []).length
-          ? [{ key: 'grams', label: '食材克数', hint: '你一顿实际放多少' }]
+          ? [{ key: 'grams', label: '食材', hint: '改用量 / 去掉 / 加一样' }]
           : []
       ).concat(
         RecipeBook.hasOverride(r.id)
@@ -264,29 +266,20 @@ var RecipesUI = (function () {
         });
       }
 
-      if (k === 'grams') {
-        return Modal.pick({
-          title: '改哪样的克数?',
-          options: (v.ingredients || []).map(function (it) {
-            return { key: it.ids[0], label: it.names.join('/'),
-                     hint: '现在记 ' + (it.qty || '?') + (it.unit || 'g') };
-          }),
-        }).then(function (id) {
-          if (!id) return;
-          var it = v.ingredients.filter(function (x) { return x.ids[0] === id; })[0];
-          return Modal.ask({
-            title: it.names[0] + ' 你放多少?',
-            hint: '改了之后采购清单和营养核算都按你这个数算。',
-            type: 'number', suffix: it.unit || 'g', value: it.qty || it.grams,
-          }).then(function (g) {
-            if (g == null) return;
-            var n = parseFloat(g);
-            if (isNaN(n) || n <= 0) return;
-            var cur = (RecipeBook.overrideOf(r.id, v.prepLevel) || {}).grams || {};
-            cur = Object.assign({}, cur); cur[id] = n;
-            RecipeBook.save(r.id, { grams: cur }, v.prepLevel);
-            render();
-          });
+      if (k === 'grams') return editIngredients(r, v);
+
+      if (k === 'ahead') {
+        return Modal.ask({
+          title: '这道要提前准备什么?',
+          hint: '库里记的是「' + (v.aheadOfTime || '不用提前') + '」。' +
+                '留空 = 不用提前。**改了之后「最多能等多久」那条筛选会跟着变** ——' +
+                '比如蛋炒饭你要是用现煮的饭,把「隔夜」清掉它就排得上了。',
+          value: v.aheadOfTime || '', allowEmpty: true, emptyLabel: '不用提前准备',
+          placeholder: '例:腌 15分钟 / 泡发 30分钟',
+        }).then(function (t) {
+          if (t == null) return;
+          RecipeBook.save(r.id, { aheadOfTime: t || null }, v.prepLevel);
+          render();
         });
       }
 
@@ -400,6 +393,94 @@ var RecipesUI = (function () {
     if (!n) return;
     n.focus();
     if (ss != null) { try { n.setSelectionRange(ss, se); } catch (e) {} }
+  }
+
+  /** 食材:改量 / 去掉 / 加一样。
+   *  ⚠️ 只给「改克数」是不够的 —— 真实的调整多半是「这道我不放香菜」
+   *     「我做红烧肉会加土豆」,那是增删不是改数。 */
+  function editIngredients(r, v) {
+    var cur = RecipeBook.overrideOf(r.id, v.prepLevel) || {};
+    Modal.pick({
+      title: '食材 · ' + r.name,
+      hint: '改了之后采购清单和营养核算都按你的来。',
+      options: (v.ingredients || []).map(function (it) {
+        return { key: 'i:' + it.ids[0], label: it.names.join('/'),
+                 hint: (it.qty || '?') + (it.unit || 'g') +
+                       (it.userAdded ? ' · 你加的' : '') +
+                       (it.role === 'main' ? ' · 主料' : '') };
+      }).concat([{ key: '__add', label: '＋ 加一样', hint: '这道你会额外放什么' }]),
+    }).then(function (k) {
+      if (!k) return;
+
+      if (k === '__add') {
+        return Modal.ask({
+          title: '加什么?',
+          hint: '搜食材名。加进去之后它会出现在采购清单里。',
+          placeholder: '例:土豆 / tudou',
+        }).then(function (q2) {
+          if (!q2) return;
+          var hits = Search.find(q2, null, 8);
+          if (!hits.total) {
+            return Modal.note({ title: '字典里没有「' + q2 + '」',
+                                body: '菜谱只能用字典里有的食材 —— 否则营养和包装规格都算不出来。' });
+          }
+          return Modal.pick({
+            title: '加哪个?',
+            options: hits.hits.map(function (i) {
+              return { key: i.id, label: i.name, hint: i.category || '' };
+            }),
+          }).then(function (id) {
+            if (!id) return;
+            var ing = Catalog.ingredient(id);
+            return Modal.ask({
+              title: ing.name + ' 放多少?', type: 'number', suffix: 'g', value: 100,
+            }).then(function (g) {
+              if (g == null) return;
+              var n = parseFloat(g);
+              if (isNaN(n) || n <= 0) return;
+              var add = (cur.add || []).slice();
+              add.push({ id: id, grams: n, role: 'side' });
+              RecipeBook.save(r.id, { add: add }, v.prepLevel);
+              render();
+            });
+          });
+        });
+      }
+
+      var id2 = k.slice(2);
+      var it = v.ingredients.filter(function (x) { return x.ids[0] === id2; })[0];
+      return Modal.pick({
+        title: it.names[0],
+        options: [
+          { key: 'qty', label: '改用量', hint: '现在 ' + (it.qty || '?') + (it.unit || 'g') },
+          { key: 'del', label: '这道我不放它',
+            hint: it.role === 'main' ? '这是主料,去掉之后这道菜会变样' : '从这道菜里去掉',
+            danger: true },
+        ],
+      }).then(function (act) {
+        if (!act) return;
+        if (act === 'del') {
+          var rm = (cur.remove || []).slice();
+          if (rm.indexOf(id2) < 0) rm.push(id2);
+          RecipeBook.save(r.id, { remove: rm }, v.prepLevel);
+          render();
+          return;
+        }
+        return Modal.ask({
+          title: it.names[0] + ' 你放多少?',
+          hint: '改了之后采购清单和营养核算都按你这个数算。',
+          type: 'number', suffix: it.unit || 'g', value: it.qty || it.grams,
+        }).then(function (g) {
+          if (g == null) return;
+          var n = parseFloat(g);
+          if (isNaN(n) || n <= 0) return;
+          var gm = Object.assign({}, cur.grams || {});
+          gm[id2] = n;
+          RecipeBook.save(r.id, { grams: gm }, v.prepLevel);
+          render();
+        });
+      });
+    });
   }
 
   function render() { keepFocus(doRender); }

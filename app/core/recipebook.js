@@ -64,6 +64,36 @@ var RecipeBook = (function () {
           return ni;
         });
       }
+
+      // 去掉的食材 —— 「这道我不放香菜」
+      //
+      // ⚠️ 允许去掉主料。看着危险,但拦下来更糟:
+      //    求解器的硬约束是「主料必须在采购清单上」,而清单是从最终选定的菜倒算的,
+      //    所以去掉一样主料的效果是「这道菜少买一样」,不是「清单和菜对不上」。
+      //    真去掉光了(一样主料不剩),下面会把这道菜整个跳过。
+      if (lv.remove && lv.remove.length) {
+        var rm = {};
+        lv.remove.forEach(function (id) { rm[id] = 1; });
+        nv.ingredients = (nv.ingredients || v.ingredients || []).filter(function (it) {
+          return !rm[it.ids[0]];
+        });
+        nv.seasonings = (v.seasonings || []).filter(function (it) { return !rm[it.ids[0]]; });
+      }
+
+      // 加进去的食材 —— 「我做红烧肉会加土豆」
+      if (lv.add && lv.add.length) {
+        var base = (nv.ingredients || v.ingredients || []).slice();
+        lv.add.forEach(function (a) {
+          if (base.some(function (it) { return it.ids[0] === a.id; })) return;
+          var ing = INGREDIENTS.filter(function (x) { return x.id === a.id; })[0];
+          base.push({
+            ids: [a.id], names: [ing ? ing.name : a.id],
+            qty: a.grams, unit: 'g', grams: a.grams,
+            role: a.role || 'side', toTaste: false, userAdded: true,
+          });
+        });
+        nv.ingredients = base;
+      }
       // ⚠️ 总时长不能小于动手时间 —— 用户只改了一个的话,把另一个顶上去,
       //    否则 Timing 会算出负数的「空等」。
       if (nv.totalMinutes != null && nv.activeMinutes != null &&
@@ -87,6 +117,14 @@ var RecipeBook = (function () {
   function init() {
     if (!BASE) BASE = JSON.parse(JSON.stringify(RECIPES));
     var merged = BASE.map(applyTo);
+    // 一样主料都不剩的菜直接排除 —— 用户可以把主料删光,但那样这道菜就不成立了,
+    // 留着会让求解器排出一道「什么都不用买」的空菜。
+    merged = merged.filter(function (r) {
+      if (!r.userEdited) return true;
+      return (r.variants || []).some(function (v) {
+        return (v.ingredients || []).length > 0;
+      });
+    });
     if (typeof window !== 'undefined') window.RECIPES = merged;
     else RECIPES = merged;
     return merged;
