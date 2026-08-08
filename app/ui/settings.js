@@ -92,11 +92,23 @@ var SettingsUI = (function () {
       return box;
     }
     var pm = Profile.perPlannedMeal(d, p.breakfast);
-    box.appendChild(h('div', { style: 'font-weight:600' }, ['每日目标 ' + d.kcal + ' kcal']));
-    box.appendChild(h('div', {}, ['蛋白 ' + d.protein + 'g · 蔬菜 ' + d.veg + 'g']));
-    box.appendChild(h('div', { style: 'margin-top:8px' },
-      ['要排的午饭 / 晚饭各约 ' + pm.kcal + ' kcal · 蛋白 ' + pm.protein + 'g']));
-    box.appendChild(h('div', { class: 'hint' }, [pm.note]));
+    // ⚠️ 改版前这五行**字号完全一样** —— 「每日 1814 kcal」和脚注里的
+    //    「基础代谢 1649」长得一模一样,眼睛没有任何落点。
+    //    这一屏只有一个数是你真正想看的,它就该比别的大。
+    box.appendChild(h('div', { class: 'xs dim' }, ['每日目标']));
+    box.appendChild(h('div', { class: 'num' }, [d.kcal + ' kcal']));
+    box.appendChild(h('div', { class: 'sm-t dim', style: 'margin-top:4px' },
+      ['蛋白 ' + d.protein + 'g · 蔬菜 ' + d.veg + 'g']));
+
+    box.appendChild(h('div', {
+      style: 'margin-top:16px;padding-top:16px;border-top:1px solid var(--border)',
+    }, [
+      h('div', { class: 'xs dim' }, ['要排的每一顿']),
+      h('div', { style: 'font-weight:600;margin-top:4px' },
+        [pm.kcal + ' kcal · 蛋白 ' + pm.protein + 'g']),
+      h('div', { class: 'hint' }, [pm.note]),
+    ]));
+
     box.appendChild(h('div', { class: 'hint' }, [
       '基础代谢 ' + Profile.bmr(Object.assign({}, p, { weightKg: kg })) +
       ' · 日常消耗 ' + d.tdee + ' · ' + (Profile.GOAL[p.goal] || {}).label,
@@ -418,17 +430,27 @@ var SettingsUI = (function () {
     w.appendChild(h('h1', {}, ['我的']));
     w.appendChild(targetsCard());
 
+    // ⚠️ 三个分区原来是三个 .btn ghost —— 整宽、实心边框、48px 高,
+    //    三个堆在一起像三个主操作在抢你点哪个。它们是**导航**,不是操作。
+    var nav = h('div', { class: 'list', style: 'margin-top:16px' });
     SECTIONS.forEach(function (s) {
-      w.appendChild(h('button', {
-        class: 'btn ghost', style: 'margin-bottom:8px;text-align:left',
+      nav.appendChild(h('div', {
+        class: 'list-row',
         onclick: function () { section = (section === s.id ? null : s.id); render(); },
-      }, [(section === s.id ? '▾ ' : '▸ ') + s.title]));
-      if (section === s.id) w.appendChild(s.render());
+      }, [
+        h('div', { class: 'body' }, [h('div', { class: 'ttl' }, [s.title])]),
+        h('span', { class: 'dim' }, [section === s.id ? '▴' : '▸']),
+      ]));
+      if (section === s.id) nav.appendChild(h('div', { style: 'padding:0 16px 16px' },
+                                              [s.render()]));
     });
+    w.appendChild(nav);
 
-    w.appendChild(h('div', { class: 'note', style: 'margin-top:8px' }, [
-      '**调味料不在这里,在「库存」。** 判据是会不会被吃掉:' +
-      '厨具不消耗,归这里;调料会慢慢用完、要提醒补货,归库存。',
+    // ⚠️ 这儿原来是一段**设计理由**(「判据是会不会被吃掉:厨具不消耗…」)——
+    //    那是我当初怎么划分的心路,不是你此刻需要知道的。
+    //    你需要的只有一句:调料不在这页,去库存找。
+    w.appendChild(h('div', { class: 'hint', style: 'margin-top:16px;text-align:center' }, [
+      '找调味料?在「库存 → 调料柜」',
     ]));
     el.appendChild(w);
     if (section === 'kitchen' && blQ) renderBlHits(config());

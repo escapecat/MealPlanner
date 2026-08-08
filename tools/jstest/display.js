@@ -126,6 +126,38 @@ RECIPES.slice(0, 60).forEach(function (r) {
 ok(anyRaw, 'ofVariant 现在返回整数了 —— 它是中间量,取整会让叠加误差变大;' +
            '要取整该在拼文案的地方做');
 
+// ---- 食材克数:页面上写的必须是**实际要用的** ----
+//
+// ⚠️ 真出过:同一张卡片上,食材标签写「猪肉末 100g」,下面一行写
+//    「按你的蛋白目标加了量:猪肉末 100g → 150g」,而采购清单按 150g 买。
+//    **站在灶台前你读的就是那几个标签** —— 读到的是错的,
+//    做出来的量不对、吃掉的量不对、剩下的记账也跟着错。
+//
+// 这里不依赖 UI 代码,直接查规则:凡是 boost/scale 动过的食材,
+// 「页面该显示的克数」必须等于调整后的值,不是菜谱原值。
+var wrong = [];
+for (var s3 = 0; s3 < 20; s3++) {
+  var o3 = Solver.solve({ servings: 4, constraints: CONS, stock: {}, mustUse: [],
+                          target: T, recentRecipeIds: {}, seed: s3 });
+  if (!o3.ok) continue;
+  o3.stage2.chosen.forEach(function (c) {
+    if (!c.boost && !c.scale) return;
+    var adj = {};
+    if (c.boost) adj[c.boost.ingredientId] = c.boost.to;
+    if (c.scale) c.scale.cuts.forEach(function (x) { adj[x.ingredientId] = x.to; });
+    (c.variant.ingredients || []).forEach(function (it) {
+      var to = adj[it.ids[0]];
+      if (to == null) return;
+      // 菜谱原值和调整值必须不同(否则这条调整本身就是空的),
+      // 而页面该显示的是后者
+      if (it.grams != null && it.grams === to) {
+        wrong.push(c.recipe.name + ' 的 ' + it.names[0] + ' 调整前后一样(' + to + 'g)');
+      }
+    });
+  });
+}
+ok(wrong.length === 0, '份量调整是空的:' + wrong.slice(0, 3).join(' · '));
+
 console.log(fail ? '页面/求解器对账 ' + fail + ' 处不对'
                  : '  页面/求解器对账 ok(' + checked + ' 顿,缩过 ' + sawScale
                    + ' 顿,换过主食 ' + sawSwap + ' 顿,最大差 ' + worstK + ' kcal)');

@@ -394,16 +394,39 @@ var RoundsUI = (function () {
 
   /** 这道菜要哪些食材。
    *  用量就是菜谱写的量,不做换算 —— 求解器里一道菜 = 一份,份数是靠多排几道菜凑的。 */
+  /**
+   * 这道菜实际要用的食材和克数。
+   *
+   * ⚠️ **必须把加量(boost)和缩量(scale)算进去。**
+   *    改版前这里直接读菜谱原始克数,于是同一张卡片上:
+   *      食材标签写「猪肉末 100g」
+   *      下面一行写「按你的蛋白目标加了量:猪肉末 100g → 150g」
+   *    而采购清单是按 150g 买的。**站在灶台前你读的就是那几个标签**,
+   *    读到的是错的 —— 做出来的量不对,吃掉的量不对,剩下的记账也跟着错。
+   *
+   *    又是「求解器算了新东西、页面不知道」那一类。和 scale/staple 那两处
+   *    同一个根:凡是求解器对这一顿做过的调整,**所有**展示路径都得知道。
+   */
   function mealIngredients(m) {
     var rv = variantOf(m);
     if (!rv) return [];
+    var adj = {};                       // ingredientId → 调整后的克数
+    if (m.boost) adj[m.boost.ingredientId] = m.boost.to;
+    if (m.scale) m.scale.cuts.forEach(function (c) { adj[c.ingredientId] = c.to; });
+
     return (rv.variant.ingredients || []).map(function (it) {
       var ing = INGREDIENTS.filter(function (x) { return x.id === it.ids[0]; })[0];
+      var to = adj[it.ids[0]];
       return {
         id: it.ids[0],
         name: (it.names && it.names[0]) || (ing ? ing.name : it.ids[0]),
         alt: it.ids.length > 1,
-        qty: it.qty, unit: it.unit || 'g', role: it.role,
+        // 改过的一律按克显示 —— 原来写「2个」的鸡蛋加量后成了 150g,
+        // 再按「个」报就得四舍五入成 3 个,反而不准
+        qty: to != null ? to : it.qty,
+        unit: to != null ? 'g' : (it.unit || 'g'),
+        adjusted: to != null ? (it.grams != null ? it.grams : it.qty) : null,
+        role: it.role,
         toTaste: it.toTaste,
       };
     });
@@ -1281,15 +1304,14 @@ var RoundsUI = (function () {
     }
 
     if (!rs.length && !sheetOpen) {
+      // ⚠️ 原来是「空状态 + 一张解释卡」两块,而且解释卡里 47 个字讲的是
+      //    「这个功能怎么用」。空屏上堆两个框、写一段说明书,不如一句话
+      //    加一个按钮 —— 按钮就在上面,点了自然知道要填什么。
       w.appendChild(h('div', { class: 'empty' }, [
         h('div', { class: 'big' }, ['🍚']),
-        h('div', {}, ['还没有记录']),
-      ]));
-      w.appendChild(h('div', { class: 'card' }, [
-        h('div', { class: 'hint' }, [
-          '点上面那个按钮开始第一次。每次只问两件事(做几天、每天几顿),',
-          '想临时改耗时或辣度可以展开改 —— 改的只作用于这一次,不动长期设定。',
-        ]),
+        h('div', { style: 'font-weight:600' }, ['还没排过']),
+        h('div', { class: 'hint', style: 'margin-top:8px' },
+          ['点上面那个按钮,填做几天、每天几顿就行']),
       ]));
     } else {
       rs.slice().reverse().forEach(function (r, i) {
