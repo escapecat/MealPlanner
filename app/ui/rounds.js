@@ -737,29 +737,40 @@ var RoundsUI = (function () {
     if (seas.length) {
       box.appendChild(h('div', { style: 'font-weight:600;margin:16px 0 6px' },
         ['还差 ' + seas.length + ' 样调料']));
+      // ⚠️ 这两个按钮原来**执行完全相同的代码**(都是 toggleStaple(id) 不带第二个参数),
+      //    只是文案不同 ——「我有」和「买了 · 记进储物柜」点哪个结果一样。
+      //    两个按钮做同一件事,比一个按钮更糟:你得先纠结选哪个,
+      //    纠结完发现选哪个都行,下次就不信这个界面了。
+      //
+      // ⚠️ 而 Pantry.toggleStaple(id, boughtAt) **本来就区分这两件事**:
+      //    不传 = 今天买的;显式传 null = 「有,但不知道什么时候买的」。
+      //    储物柜那边靠它算「开封多久了、该不该提醒换」。
+      //    又一处「核心写了、界面没接上」。
+      var seasList = h('div', { class: 'list' });
       seas.forEach(function (sx) {
-        var line = h('div', { class: 'card', style: 'padding:12px 12px;margin-bottom:8px' });
-        line.appendChild(h('div', {}, [sx.name]));
-        line.appendChild(h('div', { class: 'hint' }, [
-          sx.dishes.slice(0, 2).join(' · ') + (sx.dishes.length > 2 ? ' 等 ' + sx.dishes.length + ' 道菜要用' : ' 要用') +
-          (sx.packaging ? ' · 常见 ' + sx.packaging : ''),
+        var row = h('div', { class: 'list-row' });
+        row.appendChild(h('div', { class: 'body' }, [
+          h('div', { class: 'ttl' }, [sx.name]),
+          h('div', { class: 'sub2' }, [
+            sx.dishes.slice(0, 2).join(' · ') +
+            (sx.dishes.length > 2 ? ' 等 ' + sx.dishes.length + ' 道菜要用' : ' 要用') +
+            (sx.packaging ? ' · 常见 ' + sx.packaging : '') +
+            (sx.surplus ? ' · ⚠️ 最小规格一个人多半吃不完' : ''),
+          ]),
         ]));
-        if (sx.surplus) {
-          line.appendChild(h('div', { class: 'hint', style: 'color:var(--warn)' },
-            ['⚠️ 最小规格一个人多半吃不完,想清楚再买']));
-        }
-        var btns = h('div', { style: 'display:flex;gap:8px;margin-top:8px' });
-        btns.appendChild(h('button', {
-          class: 'btn ghost', style: 'width:auto;padding:4px 12px;font-size:13px',
-          onclick: function () { Pantry.toggleStaple(sx.ingredientId); render(); },
+        row.appendChild(h('span', {
+          class: 'act',
+          // 显式 null:柜子里早就有,不知道什么时候买的
+          onclick: function () { Pantry.toggleStaple(sx.ingredientId, null); render(); },
         }, ['我有']));
-        btns.appendChild(h('button', {
-          class: 'btn ghost', style: 'width:auto;padding:4px 12px;font-size:13px',
+        row.appendChild(h('span', {
+          class: 'act',
+          // 不传第二个参数 = 记今天 —— 开封提醒要靠这个日期
           onclick: function () { Pantry.toggleStaple(sx.ingredientId); render(); },
-        }, ['买了 · 记进储物柜']));
-        line.appendChild(btns);
-        box.appendChild(line);
+        }, ['刚买']));
+        seasList.appendChild(row);
       });
+      box.appendChild(seasList);
     }
 
     // ⚠️ 按**该吃的顺序**分天,不是求解器挑中的顺序。
