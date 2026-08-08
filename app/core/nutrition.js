@@ -76,6 +76,122 @@ var Nutrition = (function () {
     };
   }
 
+  /**
+   * 蛋白不够,**先把主料加量** —— 比另外加一样东西自然得多。
+   *
+   * 「鸡胸 150g → 220g」不用多买一样、不用多做一步,而
+   * 「鸡胸 150g + 一罐金枪鱼」是硬塞。所以这一步在补充项之前。
+   *
+   * ⚠️ 但加量救不了全部,数据说得很清楚:
+   *    要补到 59g,**中位数得加到 1.8 倍**;1.3 倍以内够的只有 12%,
+   *    1.6 倍以内 39%。而蔬菜为主的菜根本救不了(凉拌黄瓜要加 36 倍)。
+   *    所以这里设了硬上限,加不动就交给 proteinTopUp。
+   *
+   * ⚠️ 上限是两条一起卡:
+   *    倍数 ≤1.5 —— 再多就不是「多吃一点」,是换了道菜(比例也变了)
+   *    绝对量 ≤ +120g —— 一顿吃 250g 以上的肉,对多数人是负担不是营养
+   */
+  var BOOST_MAX_MULT = 1.5;
+  var BOOST_MAX_ADD = 120;
+  var BOOST_MIN_PROTEIN_DENSITY = 10;   // 低于这个的不算蛋白源,加了也没用
+
+  function portionBoost(variant, n, target) {
+    if (!variant || !n || !target || !target.protein) return null;
+    var gap = target.protein - n.protein;
+    if (gap < 5) return null;
+
+    // 挑蛋白密度最高的那个主料来加
+    var best = null;
+    (variant.ingredients || []).forEach(function (it) {
+      if (it.role !== 'main' || !it.grams) return;
+      var i = ing(it.ids[0]);
+      if (!i || !i.per100g || !i.per100g.protein) return;
+      if (i.per100g.protein < BOOST_MIN_PROTEIN_DENSITY) return;
+      if (!best || i.per100g.protein > best.density) {
+        best = { id: it.ids[0], name: it.names[0], from: it.grams,
+                 density: i.per100g.protein, kcal100: i.per100g.kcal || 0 };
+      }
+    });
+    if (!best) return null;
+
+    var wanted = gap / best.density * 100;
+    var add = Math.min(wanted, best.from * (BOOST_MAX_MULT - 1), BOOST_MAX_ADD);
+    add = Math.round(add / 10) * 10;
+    if (add < 20) return null;              // 加不到 20g 不值得改清单
+
+    return {
+      ingredientId: best.id, name: best.name,
+      from: best.from, to: best.from + add, added: add,
+      protein: Math.round(add * best.density / 100),
+      kcal: Math.round(add * best.kcal100 / 100),
+    };
+  }
+
+  /**
+   * 蛋白不够就补一份 —— **和「不带主食就配碗饭」是同一套逻辑**。
+   *
+   * ⚠️ 为什么必须有这个:减脂目标算出来单顿要 59g 蛋白,
+   *    而在一份典型配置下,293 个可做档位里能到 59g 的只有 7 个(2%),中位数 35g。
+   *    也就是说**靠挑菜根本达不到** —— 就像当初 315 道菜不带主食,
+   *    解法不是去挑「自带饭的菜」,是自动配一碗饭。
+   *
+   * ⚠️ 名单只收**字典里真有营养数据**的。即食鸡胸看着最合适(免做、100g/袋),
+   *    但它的 per100g 是 null —— 用了就是我编数字,宁可不用。
+   *
+   * 排序按「每 100 kcal 能给多少蛋白」,减脂时这才是要紧的:
+   *    金枪鱼罐头 25g/130kcal · 北豆腐 12.2g/116 · 鸡蛋 13g/144 · 希腊酸奶 9g/97
+   */
+  var PROTEIN_TOPUPS = [
+    { id: 'canned_tuna', grams: 100, how: '开一罐沥干,拌进去或者摆边上' },
+    { id: 'firm_tofu', grams: 150, how: '切块,煎两面或者直接凉拌' },
+    { id: 'egg', grams: 50, how: '煮一个或者煎一个' },
+    { id: 'greek_yogurt', grams: 150, how: '饭后一杯' },
+  ];
+
+  /**
+   * 这一顿要不要补蛋白、补什么。
+   * @param blacklist 忌口(补的东西也得守忌口,不然等于绕过设置)
+   * @return {ingredientId, name, grams, protein, kcal, how} 或 null
+   */
+  /**
+   * @param used 这一轮已经用过的补充项 {id:次数} —— **必须传**,否则四顿全是金枪鱼。
+   *
+   * ⚠️ 连着四顿加同一样东西,不管那样东西多合适都是坏结果:
+   *    一是腻,二是你可能压根不爱吃它。轮换的成本几乎为零,不轮换的代价是整份计划废掉。
+   */
+  function proteinTopUp(n, target, blacklist, used) {
+    if (!n || !target || !target.protein) return null;
+    var gap = target.protein - n.protein;
+    if (gap < 8) return null;                 // 差一点点不值得多买一样东西
+
+    var bad = {};
+    (blacklist || []).forEach(function (b) { bad[b] = 1; });
+    var seen = used || {};
+
+    // 用得最少的排前面;同样次数的保持原有顺序(蛋白密度高的优先)
+    var order = PROTEIN_TOPUPS.map(function (t, i) { return { t: t, i: i }; })
+      .sort(function (a, b) {
+        var d = (seen[a.t.id] || 0) - (seen[b.t.id] || 0);
+        return d !== 0 ? d : a.i - b.i;
+      });
+
+    for (var i = 0; i < order.length; i++) {
+      var t = order[i].t;
+      if (bad[t.id]) continue;
+      var ig = ing(t.id);
+      if (!ig || !ig.per100g || !ig.per100g.protein) continue;   // 没数据的不用
+      // 按缺口算要多少,但不超过一个正常份量的两倍 —— 补蛋白不是硬灌
+      var need = Math.min(t.grams * 2,
+                          Math.max(t.grams, Math.round(gap / ig.per100g.protein * 100 / 10) * 10));
+      return {
+        ingredientId: t.id, name: ig.name, grams: need, how: t.how,
+        protein: Math.round(need * ig.per100g.protein / 100),
+        kcal: Math.round(need * (ig.per100g.kcal || 0) / 100),
+      };
+    }
+    return null;
+  }
+
   /** 离目标差多少 —— 0 = 达标 */
   function shortfall(n, target) {
     if (!target) return 0;
@@ -99,6 +215,8 @@ var Nutrition = (function () {
   return {
     DEFAULT_STAPLE: DEFAULT_STAPLE, STAPLE_GRAMS: STAPLE_GRAMS,
     gramsOf: gramsOf, ofVariant: ofVariant, ofMeal: ofMeal, shortfall: shortfall,
+    PROTEIN_TOPUPS: PROTEIN_TOPUPS, proteinTopUp: proteinTopUp,
+    portionBoost: portionBoost,
   };
 })();
 

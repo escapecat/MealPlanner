@@ -395,6 +395,47 @@ var Solver = (function () {
             protein: cm.nutrition.protein + Math.round(sn.protein),
           });
         }
+
+        // 蛋白还是不够就补一份 —— 和「不带主食就配碗饭」同一套逻辑。
+        //
+        // ⚠️ 必须在配完青菜**之后**判断:配菜也带蛋白(豆腐、金针菇),
+        //    先判会重复补。而且要在打分之前,否则补了等于白补。
+        // ⚠️ 顺序是**先加主料、再补充项**,不能反过来。
+        //    「鸡胸 150g → 220g」比「鸡胸 150g + 一罐金枪鱼」自然得多:
+        //    不用多买一样、不用多做一步。反过来做的话,先补了就没必要加量,
+        //    结果每顿都挂着一样额外的东西。
+        if (typeof Nutrition !== 'undefined' && opts.target) {
+          for (var bi = 0; bi < chosen.length; bi++) {
+            var bm = chosen[bi];
+            var bo = Nutrition.portionBoost(bm.variant, bm.nutrition, opts.target);
+            if (!bo) continue;
+            bm.boost = bo;
+            bm.nutrition = Object.assign({}, bm.nutrition, {
+              protein: bm.nutrition.protein + bo.protein,
+              kcal: bm.nutrition.kcal + bo.kcal,
+            });
+            // 加的这部分也要吃掉预算里的量
+            if (left[bo.ingredientId] != null) {
+              left[bo.ingredientId] = Math.max(0, left[bo.ingredientId] - bo.added);
+            }
+          }
+        }
+
+        if (typeof Nutrition !== 'undefined' && opts.target) {
+          var usedUp = {};    // 这一轮用过哪些补充项 —— 不传的话四顿全是同一样
+          for (var ti = 0; ti < chosen.length; ti++) {
+            var tm = chosen[ti];
+            var up = Nutrition.proteinTopUp(tm.nutrition, opts.target,
+                                            (opts.constraints || {}).blacklist, usedUp);
+            if (!up) continue;
+            usedUp[up.ingredientId] = (usedUp[up.ingredientId] || 0) + 1;
+            tm.topUp = up;
+            tm.nutrition = Object.assign({}, tm.nutrition, {
+              protein: tm.nutrition.protein + up.protein,
+              kcal: tm.nutrition.kcal + up.kcal,
+            });
+          }
+        }
       }
 
       // 打分。
@@ -520,6 +561,18 @@ var Solver = (function () {
           need[id] = (need[id] || 0) + g;
         });
       });
+      // 主料加量的部分也要进清单 —— 页面写「鸡胸 150→220g」,
+      // 清单还按 150g 买的话,做到一半就不够了。
+      if (c.boost) {
+        need[c.boost.ingredientId] = (need[c.boost.ingredientId] || 0) + c.boost.added;
+      }
+
+      // 补的那份蛋白也要进清单 —— 页面写着「加一罐金枪鱼」,
+      // 清单里却没有的话,到超市才发现买不齐。
+      if (c.topUp) {
+        need[c.topUp.ingredientId] = (need[c.topUp.ingredientId] || 0) + c.topUp.grams;
+      }
+
       // 不带主食的菜要配一碗饭,这份米也得进清单。
       // ⚠️ 一顿只配一碗 —— 挂在 chosen 上,不是挂在每个 variant 上,
       //    否则主菜和配菜会各配一碗饭。

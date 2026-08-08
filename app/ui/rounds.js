@@ -289,6 +289,14 @@ var RoundsUI = (function () {
                  missing: c.missing, cooked: false,
                  // 配菜:蔬菜不够的那顿配一道简单青菜。存 id + 档位就够,
                  // 食材现查(和主菜一样,派生数据不存两份)。
+                 // 主料加量:蛋白不够时先加它,比另外补一样自然
+                 boost: c.boost ? { ingredientId: c.boost.ingredientId, name: c.boost.name,
+                                    from: c.boost.from, to: c.boost.to,
+                                    protein: c.boost.protein, kcal: c.boost.kcal } : null,
+                 // 补的那份蛋白 —— 和配菜一样,存结论不存明细
+                 topUp: c.topUp ? { ingredientId: c.topUp.ingredientId, name: c.topUp.name,
+                                    grams: c.topUp.grams, protein: c.topUp.protein,
+                                    kcal: c.topUp.kcal, how: c.topUp.how } : null,
                  side: c.side ? { recipeId: c.side.recipeId, name: c.side.name,
                                   method: c.side.method, prepLevel: c.side.prepLevel,
                                   activeMinutes: c.side.activeMinutes,
@@ -673,6 +681,35 @@ var RoundsUI = (function () {
     var plan = Schedule.assign(s.meals, r.input.days, r.input.perDay);
 
     box.appendChild(h('div', { style: 'font-weight:600;margin:14px 0 6px' }, ['做这些']));
+
+    // ⚠️ **补不动就得说**。补一份蛋白能拉近差距,但库里能到高蛋白的菜本来就少
+    //    (一份典型减脂配置下,293 个可做档位只有 7 个到得了 59g)。
+    //    补完还差的话,沉默就等于假装达标了 —— 而体重没按预期走的时候,
+    //    你会先怀疑自己而不是怀疑这份计划。
+    (function () {
+      var p0 = Store.get('profile', {}) || {};
+      var wl = Store.get('weightLog', []) || [];
+      var dd = Profile.dailyTargets(Object.assign({}, p0,
+                 { weightKg: wl.length ? wl[wl.length - 1].kg : null }));
+      var tg = dd ? Profile.perPlannedMeal(dd, p0.breakfast) : null;
+      if (!tg || !tg.protein) return;
+      var short = (s.meals || []).filter(function (m) {
+        var rv2 = variantOf(m);
+        if (!rv2) return false;
+        var n2 = Nutrition.ofMeal(rv2.variant);
+        var sv2 = m.side ? variantOf(m.side) : null;
+        var tot = n2.protein + (sv2 ? Nutrition.ofVariant(sv2.variant).protein : 0)
+                + (m.topUp ? m.topUp.protein : 0) + (m.boost ? m.boost.protein : 0);
+        return tot < tg.protein * 0.85;
+      });
+      if (!short.length) return;
+      box.appendChild(h('div', { class: 'note warn', style: 'margin-bottom:8px' }, [
+        '**' + short.length + ' 顿蛋白没到目标**(' + tg.protein + 'g)—— ' +
+        '已经各加了一份还是不够,库里高蛋白的菜就这么多。' +
+        '要么接受,要么去「我的」把目标调温和一点 —— 别当它达标了。',
+      ]));
+    })();
+
     Schedule.warnings(plan).forEach(function (t) {
       box.appendChild(h('div', { class: 'note warn', style: 'margin-bottom:8px' }, [t]));
     });
@@ -842,14 +879,41 @@ var RoundsUI = (function () {
       }, chips));
     }
 
+    // 主料加量 —— 直接改那一样的克数,比另外挂一样东西自然。
+    // ⚠️ 必须显示原值:「鸡胸 150→220g」你才知道这是按你的目标调过的,
+    //    只写 220g 的话,下次你翻菜谱页看到 150g 会以为哪儿错了。
+    if (m.boost) {
+      card.appendChild(h('div', { class: 'hint', style: 'margin-top:6px;color:var(--accent)' }, [
+        '按你的蛋白目标加了量:**' + m.boost.name + ' ' + m.boost.from + 'g → ' +
+        m.boost.to + 'g**(+' + m.boost.protein + 'g 蛋白)',
+      ]));
+    }
+
     if (nu) {
       var sideNu = m.side ? Nutrition.ofVariant((variantOf(m.side) || {}).variant || {}) : null;
+      var upK = (m.topUp ? m.topUp.kcal : 0) + (m.boost ? m.boost.kcal : 0);
+      var upP = (m.topUp ? m.topUp.protein : 0) + (m.boost ? m.boost.protein : 0);
       card.appendChild(h('div', { class: 'hint', style: 'margin-top:6px' }, [
-        '约 ' + (nu.kcal + (sideNu ? sideNu.kcal : 0)) + ' kcal · 蛋白 ' +
-        (nu.protein + (sideNu ? sideNu.protein : 0)) + 'g · 蔬菜 ' +
+        '约 ' + (nu.kcal + (sideNu ? sideNu.kcal : 0) + upK) + ' kcal · 蛋白 ' +
+        (nu.protein + (sideNu ? sideNu.protein : 0) + upP) + 'g · 蔬菜 ' +
         (nu.veg + (sideNu ? sideNu.veg : 0)) + 'g' +
         (nu.selfContained ? ' · 自带主食' : ' · 已含那碗饭') +
-        (m.side ? ' · 含配菜' : ''),
+        (m.side ? ' · 含配菜' : '') + (m.topUp ? ' · 含加的蛋白' : ''),
+      ]));
+    }
+
+    // 补的蛋白 —— 蛋白不够时加的一份。
+    // ⚠️ 和配一碗饭是同一套逻辑:靠挑菜达不到减脂需要的蛋白量
+    //    (典型配置下 293 个可做档位只有 7 个能到 59g),所以补一份。
+    if (m.topUp) {
+      card.appendChild(h('div', {
+        style: 'margin-top:8px;padding:8px 10px;border-left:3px solid var(--warn);' +
+               'background:var(--warn-dim);border-radius:0 8px 8px 0;font-size:13px',
+      }, [
+        '加 · ' + m.topUp.name + ' ' + m.topUp.grams + 'g',
+        h('span', { class: 'hint', style: 'margin-left:8px' }, [
+          '+' + m.topUp.protein + 'g 蛋白 · ' + m.topUp.how,
+        ]),
       ]));
     }
 
