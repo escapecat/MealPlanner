@@ -445,12 +445,34 @@ var Solver = (function () {
         short = (sum / shorts.length) * 0.5 + worst * 0.5;
       }
 
+      // 省事程度 —— **这一项以前完全没有**。
+      //
+      // ⚠️ 时间此前只被当成**过滤器**(超过上限就滤掉),上限之内 10 分钟和 45 分钟
+      //    在打分上一模一样。后果最明显的是 prepLevel:
+      //    「韭菜鸡蛋盒子」有 scratch(醒面 20 分钟)/ assembled(买现成皮)/
+      //    readymade 三档,三个变体是三个独立候选、同分竞争 ——
+      //    于是一道菜跟自己抢,抽到哪档全看运气,经常抽到要和面的那档。
+      //    库里 13 道要醒面的菜有 11 道都有现成档,却照样排出手工版。
+      //
+      //    空等按三折算:焖着的时候你是自由的,不像动手那样占人。
+      //    权重压得比浪费和营养都低 —— 这是「同等条件下选省事的」,
+      //    不是「为了省事什么都不管」。
+      var effort = 0;
+      chosen.forEach(function (c) {
+        var t = (typeof Timing !== 'undefined')
+                ? Timing.ofMeal(c.variant, c.side && c.side._cand ? c.side._cand.variant : null)
+                : { active: c.variant.activeMinutes || 0, idle: 0 };
+        effort += t.active + t.idle * 0.3;
+      });
+      effort = effort / chosen.length;
+
       var score = (1 - wasteRatio) * 100
                 + Math.min(methodCount, servings) * 8
                 - missing * 4
                 - untouched * 25
                 - urgentLeft * 0.15
-                - short * 120;          // 权重高于浪费 —— 吃不饱比剩一点严重
+                - short * 120           // 权重高于浪费 —— 吃不饱比剩一点严重
+                - effort * 1.2;         // 同等条件下选省事的
 
 
 
