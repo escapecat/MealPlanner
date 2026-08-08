@@ -137,6 +137,39 @@ var RoundsUI = (function () {
         h('div', { class: 'hint' }, ['嘴上火了这周清淡点,不用去改长期设定']),
       ]));
 
+      // ⚠️ 「今天饿着」和「周末有空」是每次都不一样的,这条最该出现在这儿。
+      //    只放在设置页的话,改一次要跑去翻折叠面板,改完还得记得改回来。
+      more.appendChild(h('div', { class: 'row' }, [
+        h('label', { class: 'lab' }, [
+          '最多能等多久(不用守着)· 平时是 ' +
+          (cfg.maxIdleWait == null || cfg.maxIdleWait >= 9999 ? '不限'
+            : cfg.maxIdleWait >= 60 ? (cfg.maxIdleWait / 60) + ' 小时' : cfg.maxIdleWait + ' 分钟'),
+        ]),
+        seg(function () { return draft.overrides.maxIdleWait; },
+            function (v) {
+              if (draft.overrides.maxIdleWait === v) delete draft.overrides.maxIdleWait;
+              else draft.overrides.maxIdleWait = v;
+            },
+            [{ v: 20, t: '20 分' }, { v: 45, t: '45 分' }, { v: 120, t: '2 小时' },
+             { v: 99999, t: '不限' }]),
+        h('div', { class: 'hint' }, [
+          '焖 / 炖 / 烤 / 腌的空等。**今天饿着就调小,周末有空就放开** —— 再点一次取消',
+        ]),
+      ]));
+
+      more.appendChild(h('div', { class: 'row' }, [
+        h('label', { class: 'lab' }, [
+          '这次接受隔夜准备吗 · 平时是 ' + (cfg.allowOvernight ? '可以' : '不接受'),
+        ]),
+        seg(function () { return draft.overrides.allowOvernight; },
+            function (v) {
+              if (draft.overrides.allowOvernight === v) delete draft.overrides.allowOvernight;
+              else draft.overrides.allowOvernight = v;
+            },
+            [{ v: false, t: '不接受' }, { v: true, t: '可以' }]),
+        h('div', { class: 'hint' }, ['蛋炒饭要隔夜冷饭、泡豆要泡一晚 —— 共 24 个变体']),
+      ]));
+
       more.appendChild(h('div', { class: 'note' }, [
         '这里改的**只作用于这一次**,不会动你的长期设定。' +
         '记下来之后也能回头看:「那次我限了 20 分钟,结果四顿做完了三顿」。',

@@ -142,7 +142,12 @@ var Round = (function () {
     var o = (r.input && r.input.overrides) || {};
     var out = [];
     if (o.maxActiveMinutes != null) out.push('限动手 ' + o.maxActiveMinutes + ' 分钟');
-    if (o.maxIdleWait != null) out.push('最多等 ' + o.maxIdleWait + ' 分钟');
+    if (o.maxIdleWait != null) {
+      out.push(o.maxIdleWait >= 9999 ? '不限等待'
+               : '最多等 ' + (o.maxIdleWait >= 60 ? (o.maxIdleWait / 60) + ' 小时'
+                                                  : o.maxIdleWait + ' 分钟'));
+    }
+    if (o.allowOvernight != null) out.push(o.allowOvernight ? '这次可以隔夜' : '这次不要隔夜');
     if (o.maxSpicy != null) out.push(['不吃辣', '微辣', '中辣', '重辣'][o.maxSpicy]);
     if (o.blacklistAdd && o.blacklistAdd.length) out.push('临时忌口 ' + o.blacklistAdd.length + ' 项');
     if (o.mustUse && o.mustUse.length) out.push('清 ' + o.mustUse.length + ' 样库存');
