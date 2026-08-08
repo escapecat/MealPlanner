@@ -230,6 +230,36 @@ var Solver = (function () {
     });
     if (!cands.length) return { ok: false, reason: 'no-candidates' };
 
+    // ⚠️ **主菜位只认蛋白达标的菜。**
+    //    原来的模型是「一道菜 = 一顿饭」,可库里 17% 的菜蛋白低于 20g ——
+    //    宁式烤菜(上海青 400g,蛋白 18g)于是可以名正言顺地当一顿晚饭。
+    //    光加打分权重不够:那只是让它不容易被选中,没从根上排除。
+    //
+    //    但**不能拦死**。厨具受限、忌口多、只买了素的时候,达标的候选可能不够铺满,
+    //    宁可排出「蛋白偏低但能吃」的一轮,也不该整个失败什么都不给。
+    //    所以只在候选还够用时才收紧。
+    // 配菜的候选池比主菜宽:**不要求食材已经在阶段一的采购提议里**。
+    //
+    // ⚠️ 第一版复用了主菜的池子,结果一道配菜都配不上 —— 阶段一买的是土豆胡萝卜,
+    //    库里那 30 道简单青菜的主料(西兰花/上海青/菠菜)一样都没买,全被筛掉了。
+    //    可现实里你就是会「顺手再买一把青菜」。阶段三本来就是从最终选定的菜倒算清单,
+    //    配菜带进来的食材会自然进清单 —— 前提是这里别提前把它们筛没。
+    var sideCands = [];
+    stage1Result.pool.forEach(function (e) {
+      e.variants.forEach(function (v) {
+        var nu = (typeof Nutrition !== 'undefined') ? Nutrition.ofMeal(v) : null;
+        if (typeof Meal !== 'undefined' && !Meal.isSimpleSide(v, nu, opts.target)) return;
+        sideCands.push({ recipe: e.recipe, variant: v, nutrition: nu,
+                         missing: (typeof Pantry !== 'undefined')
+                                  ? Pantry.missingSeasonings(v).length : 0 });
+      });
+    });
+
+    if (typeof Meal !== 'undefined') {
+      var mainOK = cands.filter(function (c) { return Meal.canBeMain(c.nutrition, opts.target); });
+      if (mainOK.length >= servings * 3) cands = mainOK;
+    }
+
 
     var recent = opts.recentRecipeIds || {};
     var pkgCache = {};          // 包装规格查询缓存 —— 每步每候选都要查,不缓存会很慢
@@ -309,7 +339,10 @@ var Solver = (function () {
         }
         var got = avail.splice(idx, 1)[0];
         if (usedRecipe[got.recipe.id]) continue;
-        chosen.push(got);
+        // ⚠️ 存副本,不存引用。cands 在 600 次采样之间是共用的,
+        //    后面要给选中的菜挂 side、改 nutrition(配了青菜蔬菜就够了)——
+        //    直接改引用会污染候选池,让后面几百次采样看到的是被上一轮改过的数据。
+        chosen.push(Object.assign({}, got));
         usedRecipe[got.recipe.id] = 1;
         methods[got.recipe.method] = 1;
         for (var q2 = 0; q2 < got.variant.ingredients.length; q2++) {
@@ -322,6 +355,37 @@ var Solver = (function () {
         }
       }
       if (chosen.length < servings) continue;
+
+      // 蔬菜不够的那几顿,配一道够简单的青菜。
+      //
+      // ⚠️ 在打分**之前**做,因为配菜会吃掉剩料 —— 它同时在补蔬菜和降浪费,
+      //    放到打分之后就白费了这层收益。
+      if (typeof Meal !== 'undefined') {
+        for (var ci = 0; ci < chosen.length; ci++) {
+          var cm = chosen[ci];
+          if (!Meal.needsGreens(cm.nutrition, opts.target)) continue;
+          var sd = Meal.pickSide(sideCands, left, opts.target, usedRecipe, function (id, g) {
+            // 为这样东西开一包会剩多少 —— 和主菜那边用的是同一套包装规格
+            if (typeof Packaging === 'undefined') return 0;
+            if (pkgCache[id] === undefined) pkgCache[id] = Packaging.smallest(id) || null;
+            var o = pkgCache[id];
+            if (!o) return 0;
+            return Math.max(0, Math.ceil(g / o.netWeight) * o.netWeight - g);
+          });
+          if (!sd) continue;
+          cm.side = sd;
+          usedRecipe[sd.recipeId] = 1;
+          (sd._cand.variant.ingredients || []).forEach(function (it) {
+            it.ids.forEach(function (id3) {
+              if (left[id3] != null && it.grams) left[id3] = Math.max(0, left[id3] - it.grams);
+            });
+            if (it.role === 'main' || it.role === 'side') needSet[it.ids[0]] = 1;
+          });
+          // 配上之后这一顿的蔬菜就够了 —— 打分要按补齐后的算,否则白配
+          cm.nutrition = Object.assign({}, cm.nutrition,
+            { veg: cm.nutrition.veg + (sd.veg || 0) });
+        }
+      }
 
       // 打分。
       //
@@ -405,15 +469,23 @@ var Solver = (function () {
   function finalizeShopping(chosen, stage1Result, opts) {
     var stock = opts.stock || {};
     var need = {};
+    // 配菜的食材也得进清单 —— 不然页面上写着「配蒜蓉西兰花」,
+    // 采购清单里却没有西兰花,到了超市才发现买不齐。
     chosen.forEach(function (c) {
-      c.variant.ingredients.forEach(function (x) {
-        if (x.role !== 'main' && x.role !== 'side' && x.role !== 'staple') return;
-        var id = x.ids[0];
-        var g = (typeof Nutrition !== 'undefined') ? Nutrition.gramsOf(x) : x.grams;
-        if (g == null) return;
-        need[id] = (need[id] || 0) + g;
+      var vs = [c.variant];
+      if (c.side && c.side._cand) vs.push(c.side._cand.variant);
+      vs.forEach(function (v) {
+        v.ingredients.forEach(function (x) {
+          if (x.role !== 'main' && x.role !== 'side' && x.role !== 'staple') return;
+          var id = x.ids[0];
+          var g = (typeof Nutrition !== 'undefined') ? Nutrition.gramsOf(x) : x.grams;
+          if (g == null) return;
+          need[id] = (need[id] || 0) + g;
+        });
       });
-      // 不带主食的菜要配一碗饭,这份米也得进清单
+      // 不带主食的菜要配一碗饭,这份米也得进清单。
+      // ⚠️ 一顿只配一碗 —— 挂在 chosen 上,不是挂在每个 variant 上,
+      //    否则主菜和配菜会各配一碗饭。
       var nu = c.nutrition;
       if (nu && nu.staple) {
         need[nu.staple.ingredientId] = (need[nu.staple.ingredientId] || 0) + nu.staple.grams;

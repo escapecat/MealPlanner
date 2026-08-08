@@ -76,14 +76,24 @@ var Nutrition = (function () {
     };
   }
 
-  /** 离目标差多少 —— 0 = 达标,1 = 完全没到 */
+  /** 离目标差多少 —— 0 = 达标 */
   function shortfall(n, target) {
     if (!target) return 0;
     function miss(actual, want) { return want ? Math.max(0, (want - actual) / want) : 0; }
     // 蛋白和蔬菜权重更高:热量少一点不要紧,蛋白不够是真问题
-    return miss(n.kcal, target.kcal) * 0.5
-         + miss(n.protein, target.protein) * 1.0
-         + miss(n.veg, target.veg) * 0.7;
+    var under = miss(n.kcal, target.kcal) * 0.5
+              + miss(n.protein, target.protein) * 1.0
+              + miss(n.veg, target.veg) * 0.7;
+
+    // ⚠️ 超标也得罚。第一版只算「不够」,于是红烧肉那顿 1581 kcal(目标 700)
+    //    在分数上和刚好达标一模一样 —— 一个减脂目标的人排出两倍热量的一顿,
+    //    系统一声不吭,还可能再给它配盘青菜。
+    //    给 25% 的宽容带(一顿吃多点很正常),超过才开始算。
+    var over = 0;
+    if (target.kcal && n.kcal > target.kcal * 1.25) {
+      over = (n.kcal - target.kcal * 1.25) / target.kcal;
+    }
+    return under + over * 0.6;
   }
 
   return {

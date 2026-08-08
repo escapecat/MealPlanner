@@ -144,5 +144,48 @@ ok((wiT.stage2.nutritionShortfall || 0) > 0, '传了 target 营养项就活了 �
 var w1 = worstProtein(noT), w2 = worstProtein(wiT);
 ok(w2 > w1, '传 target 后最差一顿的蛋白更高(' + w1 + 'g → ' + w2 + 'g)');
 
+// --- 8. 一顿必须是完整的一顿 ---
+//
+// ⚠️ 原来的模型是「一道菜 = 一顿饭」,可库里 17% 的菜蛋白低于 20g ——
+//    宁式烤菜(上海青 400g,蛋白 18g)能名正言顺地当一顿晚饭。
+//    加打分权重只是让它不容易被选中,没从根上排除。
+global.Meal = require(path.join(A, 'core', 'meal.js'));
+var full = Solver.solve(Object.assign({}, BASE, { constraints: FULL, target: TGT }));
+ok(full.ok, '加了主菜门槛还能排出来');
+
+var minP = full.stage2.chosen.reduce(function (m, c) {
+  return Math.min(m, c.nutrition.protein);
+}, 999);
+ok(minP >= Meal.proteinFloor(TGT) * 0.9,
+   '最差一顿蛋白 ' + minP + 'g,不低于门槛 ' + Meal.proteinFloor(TGT) + 'g');
+
+var minV = full.stage2.chosen.reduce(function (m, c) {
+  return Math.min(m, c.nutrition.veg);
+}, 999);
+ok(minV >= Meal.vegFloor(TGT), '最差一顿蔬菜 ' + minV + 'g,不低于门槛 ' + Meal.vegFloor(TGT) + 'g');
+
+// 配菜必须简单 —— 你要的是「再弄个青菜」,不是再做一道正经菜
+var sides = full.stage2.chosen.filter(function (c) { return c.side; });
+ok(sides.every(function (c) { return c.side.activeMinutes <= 12; }),
+   sides.length + ' 道配菜动手都 ≤12 分(' +
+   sides.map(function (c) { return c.side.name + ' ' + c.side.activeMinutes + '分'; }).join(' · ') + ')');
+
+// 配菜的食材必须进采购清单 —— 页面写着配西兰花、清单里却没有,到超市才发现买不齐
+var listed = {};
+full.shopping.buy.forEach(function (b) { listed[b.ing.id] = 1; });
+(full.stage2.chosen[0].side ? [full.stage2.chosen[0]] : []).forEach(function (c) {
+  var v = c.side._cand.variant;
+  var mains = (v.ingredients || []).filter(function (x) { return x.role === 'main'; });
+  ok(mains.every(function (x) { return x.ids.some(function (i2) { return listed[i2]; }); }),
+     '配菜「' + c.side.name + '」的主料在采购清单里');
+});
+
+// ⚠️ 超标也得罚。第一版 shortfall 只算「不够」,红烧肉那顿 1581 kcal(目标 700)
+//    在分数上和刚好达标一样 —— 减脂目标的人排出两倍热量,系统一声不吭。
+var fat = { kcal: 1600, protein: 40, veg: 200 };
+var justRight = { kcal: 700, protein: 40, veg: 200 };
+ok(Nutrition.shortfall(fat, TGT) > Nutrition.shortfall(justRight, TGT),
+   '1600 kcal 的一顿比 700 kcal 的扣分多(超标不再免费)');
+
 console.log(fails ? '\n' + fails + ' 条挂了' : '\n全过');
 process.exit(fails ? 1 : 0);

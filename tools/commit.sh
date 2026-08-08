@@ -8,6 +8,10 @@
 #
 # 教训升级:光把检查写成独立一步不够,**得让它没法被绕过**。
 # 这里不加管道、不加 tail、不加 &&,失败直接 exit。
+#
+# ⚠️ 提交信息要落成临时文件,不能直接给 git 一个 /dev/stdin ——
+#    Git Bash 下 git 会去读 /proc/self/fd/0,报 "could not read log file"。
+#    第一版就是这么挂的,而且挂在「检查通过之后」,看起来像检查脚本坏了。
 
 cd "$(dirname "$0")/.." || exit 1
 
@@ -18,5 +22,11 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-git add -A || exit 1
-git commit -F "${1:-/dev/stdin}"
+MSGFILE=$(mktemp) || exit 1
+if [ -n "$1" ]; then cat "$1" > "$MSGFILE"; else cat > "$MSGFILE"; fi
+
+git add -A || { rm -f "$MSGFILE"; exit 1; }
+git commit -F "$MSGFILE"
+rc=$?
+rm -f "$MSGFILE"
+exit $rc

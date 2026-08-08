@@ -253,7 +253,13 @@ var RoundsUI = (function () {
         return { recipeId: c.recipe.id, name: c.recipe.name, method: c.recipe.method,
                  prepLevel: c.variant.prepLevel, activeMinutes: c.variant.activeMinutes,
                  totalMinutes: c.variant.totalMinutes, difficulty: c.variant.difficulty,
-                 missing: c.missing, cooked: false };
+                 missing: c.missing, cooked: false,
+                 // 配菜:蔬菜不够的那顿配一道简单青菜。存 id + 档位就够,
+                 // 食材现查(和主菜一样,派生数据不存两份)。
+                 side: c.side ? { recipeId: c.side.recipeId, name: c.side.name,
+                                  method: c.side.method, prepLevel: c.side.prepLevel,
+                                  activeMinutes: c.side.activeMinutes,
+                                  usesLeftover: !!c.side.usesLeftover } : null };
       }),
       freshWaste: out.wasteRatio,
       freshLeft: out.stage2.freshLeft, carryLeft: out.stage2.carryLeft,
@@ -793,10 +799,44 @@ var RoundsUI = (function () {
     }
 
     if (nu) {
+      var sideNu = m.side ? Nutrition.ofVariant((variantOf(m.side) || {}).variant || {}) : null;
       card.appendChild(h('div', { class: 'hint', style: 'margin-top:6px' }, [
-        '约 ' + nu.kcal + ' kcal · 蛋白 ' + nu.protein + 'g · 蔬菜 ' + nu.veg + 'g' +
-        (nu.selfContained ? ' · 自带主食' : ' · 已含那碗饭'),
+        '约 ' + (nu.kcal + (sideNu ? sideNu.kcal : 0)) + ' kcal · 蛋白 ' +
+        (nu.protein + (sideNu ? sideNu.protein : 0)) + 'g · 蔬菜 ' +
+        (nu.veg + (sideNu ? sideNu.veg : 0)) + 'g' +
+        (nu.selfContained ? ' · 自带主食' : ' · 已含那碗饭') +
+        (m.side ? ' · 含配菜' : ''),
       ]));
+    }
+
+    // 配菜 —— 主菜蔬菜不够时配的。
+    // ⚠️ 必须是**一道够简单的菜**(动手 ≤12 分、难度 ≤2、一口锅),
+    //    不是再做一道正经菜。而且优先挑能吃掉剩料、包装规格又合适的 ——
+    //    加了配菜之后浪费从 42% 降到 30%,不是涨上去。
+    if (m.side) {
+      var sv = variantOf(m.side);
+      var sideBox = h('div', {
+        style: 'margin-top:10px;padding:8px 10px;border-left:3px solid var(--accent);' +
+               'background:var(--accent-dim);border-radius:0 8px 8px 0',
+      });
+      sideBox.appendChild(h('div', { style: 'font-size:13px' }, [
+        '配 · ' + m.side.name,
+        h('span', { class: 'hint', style: 'margin-left:8px' }, [
+          m.side.method + ' ' + m.side.activeMinutes + ' 分' +
+          (m.side.usesLeftover ? ' · 用得上剩料' : ''),
+        ]),
+      ]));
+      if (sv) {
+        sideBox.appendChild(h('div', {
+          style: 'display:flex;gap:5px;flex-wrap:wrap;margin-top:5px',
+        }, mealIngredients(m.side).map(function (x) {
+          return h('span', {
+            style: 'font-size:12px;padding:1px 7px;border-radius:999px;' +
+                   'border:1px solid var(--border);color:var(--text-dim)',
+          }, [x.name + (x.qty ? ' ' + x.qty + x.unit : '')]);
+        })));
+      }
+      card.appendChild(sideBox);
     }
 
     var note = (rv && rv.variant.note) || (rv && rv.recipe.note);
