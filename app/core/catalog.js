@@ -144,18 +144,19 @@ var Catalog = (function () {
       var ing = ingredient(id);
       if (ing) out.push({ id: id, name: ing.name });
     });
-    // 「和面」不是一样食材,是一组 —— 三种面粉正好是「从头做面食」的精确标记:
-    // 库里 33 个非面粉不可的变体全部是 scratch 档,一个不多一个不少。
+    // ⚠️ 这里**曾经有一条「和面(三种面粉)」的快选,已删**。
+    //    当时的理由是「库里 33 个非面粉不可的变体全是 scratch 档」——
+    //    那句话本身没错,但推论错了:**面粉出现 ≠ 要和面**。
+    //      干炸里脊 / 糖醋里脊 / 炸带鱼  → 面粉是挂糊用的
+    //      冰花煎饺(速冻)              → 面粉只是调冰花糊
+    //      奶油蘑菇汤 / 巧达浓汤         → 面粉是勾芡的油面酱
+    //      香蕉面包 / 蓝莓玛芬 / 司康     → 烘焙,根本不醒面
+    //    实测拉黑面粉会让 21 道菜整个消失,其中真正要和面的只有 2 道,
+    //    **误伤 19 道**。
     //
-    // ⚠️ 放在忌口的快选里,**不做成独立设置**。它就是一条忌口,
-    //    而且「不想和面」和「不吃香菜」是同一类事:都是「别给我排用到它的菜」。
-    //    独立设置会让同一件事有两个开关,以后必然对不上。
-    //    也不能用 @category:杂粮 —— 那一类还包含小米燕麦,会误伤。
-    var flours = ['wheat_flour_high', 'wheat_flour_medium', 'wheat_flour_low']
-      .filter(function (id) { return !!ingredient(id); });
-    if (flours.length) {
-      out.push({ id: flours[0], ids: flours, name: '和面(' + flours.length + '种面粉)' });
-    }
+    //    真正的标记在 aheadOfTime 里的「醒面 / 发酵 / 面团」,不在食材列。
+    //    而忌口机制只能按食材过滤,表达不了它 —— 所以这件事根本不属于忌口,
+    //    硬塞进来就是拿一个近似标记冒充精确条件。
 
     // 内脏整类:从字典的类别推,不手写清单
     var organs = INGREDIENTS.filter(function (i) { return i.category === '内脏'; });
