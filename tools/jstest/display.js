@@ -85,6 +85,47 @@ ok(worstP <= 3, '页面算出来的蛋白和求解器差 ' + worstP + 'g');
 ok(sawScale > 0, '30 轮里一顿都没缩过份量 —— 这条测试等于没测');
 ok(sawSwap > 0, '30 轮里一顿都没换过主食 —— 这条测试等于没测');
 
+// ---- 界面上不许出现没取整的数 ----
+//
+// ⚠️ 真出过:计划页营养那行印的是「蛋白 67.075g · 986.9 kcal」。
+//    原因是配菜走 Nutrition.ofVariant,它返回**没四舍五入的累加器**
+//    (只有 ofMeal 取整),拼文案时直接相加就带出小数。
+//    这不是精度问题是**可信度问题** —— 一份用小数点后三位报蛋白的计划,
+//    没人会信它算得准,只会觉得这软件不像给人用的。
+var dirty = [];
+RECIPES.slice(0, 120).forEach(function (r) {
+  (r.variants || []).forEach(function (v) {
+    var n = Nutrition.ofMeal(v);
+    ['kcal', 'protein', 'carb', 'veg'].forEach(function (k) {
+      if (n[k] != null && n[k] !== Math.round(n[k])) {
+        dirty.push('ofMeal(' + r.name + ').' + k + ' = ' + n[k]);
+      }
+    });
+    var b = Nutrition.portionBoost(v, n, T);
+    if (b && (b.protein !== Math.round(b.protein) || b.kcal !== Math.round(b.kcal))) {
+      dirty.push('portionBoost(' + r.name + ') 没取整');
+    }
+    var sc = Nutrition.portionScale(v, n, T);
+    if (sc && (sc.kcal !== Math.round(sc.kcal) || sc.protein !== Math.round(sc.protein))) {
+      dirty.push('portionScale(' + r.name + ') 没取整');
+    }
+  });
+});
+ok(dirty.length === 0, '会显示到界面上的营养字段没取整:' + dirty.slice(0, 4).join(' · '));
+
+// ⚠️ ofVariant **故意**不取整(它是中间量,叠加时要精度)——
+//    所以调用方拼文案前必须自己 round。这条钉住这个约定:
+//    哪天有人「顺手」把 ofVariant 也取整了,叠四五项的误差会悄悄变大。
+var anyRaw = false;
+RECIPES.slice(0, 60).forEach(function (r) {
+  (r.variants || []).forEach(function (v) {
+    var n = Nutrition.ofVariant(v);
+    if (n.kcal !== Math.round(n.kcal) || n.protein !== Math.round(n.protein)) anyRaw = true;
+  });
+});
+ok(anyRaw, 'ofVariant 现在返回整数了 —— 它是中间量,取整会让叠加误差变大;' +
+           '要取整该在拼文案的地方做');
+
 console.log(fail ? '页面/求解器对账 ' + fail + ' 处不对'
                  : '  页面/求解器对账 ok(' + checked + ' 顿,缩过 ' + sawScale
                    + ' 顿,换过主食 ' + sawSwap + ' 顿,最大差 ' + worstK + ' kcal)');

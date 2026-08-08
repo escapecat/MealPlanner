@@ -517,10 +517,12 @@ var RoundsUI = (function () {
           ? '(还有 ' + (s.shopping.length - filled.length) + ' 样没填)' : ''),
       ]));
     } else {
+      // ⚠️ 这儿原来是 62 个字,而同一句「规格是估的」下面的 hint 和每一行
+      //    括号里还会再各说一遍 —— 一屏说三次,等于一次都没说。
+      //    只留一句,而且是**站在货架前真正需要知道的那句**:
+      //    克数准、规格不准,以包装为准。
       box.appendChild(h('div', { class: 'note' }, [
-        s.methodCount + ' 种做法。' +
-        '下面的克数是**菜谱算出来的需求**,准的;括号里的规格是估的,没人核实过 —— ' +
-        '买的时候以货架为准,回来填实际克数。',
+        '克数是**按菜谱算的需求**;规格是估的,以货架上的包装为准。',
       ]));
     }
 
@@ -743,11 +745,14 @@ var RoundsUI = (function () {
     // ⚠️ 必须说清「一道菜 = 一顿」。
     //    早先只给了「第 1 天」+「1. 2.」的编号,第一天两道菜到底是一顿两个菜、
     //    还是两顿,页面上没有任何一个字回答 —— 而这是看懂整页的前提。
+    // ⚠️ 「一道菜 = 一顿」这句必须留 —— 早先没有它,第一天两道菜到底是
+    //    一顿两个菜还是两顿,页面上没有一个字回答,而这是看懂整页的前提。
+    //    但后半段「你选了 2 天 × 每天 2 顿 = 4 顿」是**把你刚填的东西念一遍**,
+    //    卡片头上已经写着「4 顿(2 天 × 2)」了。删掉。
     box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
-      '**一道菜 = 一顿。**你选了 ' + r.input.days + ' 天 × 每天 ' + r.input.perDay +
-      ' 顿 = ' + (r.input.days * r.input.perDay) + ' 顿' +
+      '**一道菜 = 一顿**' +
       (r.input.diners > 1 ? '(' + r.input.diners + ' 人份)' : '') +
-      '。顺序按最容易坏的先吃排,时间是估的。',
+      ' · 按最容易坏的先吃排 · 时间是估的',
     ]));
 
     var lastDay = null;
@@ -932,10 +937,16 @@ var RoundsUI = (function () {
               - (m.scale ? m.scale.kcal : 0);
       var upP = (m.topUp ? m.topUp.protein : 0) + (m.boost ? m.boost.protein : 0)
               - (m.scale ? m.scale.protein : 0);
+      // ⚠️ 必须取整。sideNu 走的是 Nutrition.ofVariant,它返回的是**没四舍五入的
+      //    累加器**(ofMeal 才取整)—— 直接相加就会在界面上印出
+      //    「蛋白 67.075g · 986.9 kcal」这种数。
+      //    这不是精度问题是**可信度问题**:一份用小数点后三位报蛋白的计划,
+      //    没人会信它算得准,只会觉得这软件不像给人用的。
+      function rd(x) { return Math.round(x); }
       card.appendChild(h('div', { class: 'hint', style: 'margin-top:8px' }, [
-        '约 ' + (nu.kcal + (sideNu ? sideNu.kcal : 0) + upK) + ' kcal · 蛋白 ' +
-        (nu.protein + (sideNu ? sideNu.protein : 0) + upP) + 'g · 蔬菜 ' +
-        (nu.veg + (sideNu ? sideNu.veg : 0)) + 'g' +
+        '约 ' + rd(nu.kcal + (sideNu ? sideNu.kcal : 0) + upK) + ' kcal · 蛋白 ' +
+        rd(nu.protein + (sideNu ? sideNu.protein : 0) + upP) + 'g · 蔬菜 ' +
+        rd(nu.veg + (sideNu ? sideNu.veg : 0)) + 'g' +
         (nu.selfContained ? ' · 自带主食' : ' · 已含那碗饭') +
         (m.side ? ' · 含配菜' : '') + (m.topUp ? ' · 含加的蛋白' : ''),
       ]));
@@ -1256,10 +1267,12 @@ var RoundsUI = (function () {
     var w = h('div', { class: 'wrap' });
     var rs = rounds();
 
-    w.appendChild(h('h1', {}, ['做饭记录']));
-    w.appendChild(h('p', { class: 'sub' }, [
-      '每次做饭是一条记录。攒多了才看得出「总剩菠菜」「排四顿只做两顿」这种事。',
-    ]));
+    // ⚠️ 标题原来叫「做饭记录」—— 按**数据结构**起的名,不是按你打开它的目的。
+    //    你开这个 app 是想知道「这周吃什么、要买什么」,不是来「记录做饭」的。
+    //    副标题原来是 34 个字的功能解释(「攒多了才看得出…」)——
+    //    那是**设计理由**,该待在代码注释里,不该占用户第一屏。
+    w.appendChild(h('h1', {}, ['这周吃什么']));
+    w.appendChild(h('p', { class: 'sub' }, ['排菜 · 采购清单 · 做完打个勾']));
 
     if (sheetOpen) {
       w.appendChild(h('div', { id: 'sheet' }));
