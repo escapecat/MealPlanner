@@ -95,6 +95,60 @@ var Catalog = (function () {
     });
   }
 
+  /**
+   * 这道菜为什么做不了 —— 逐个 variant 给出**具体是哪条约束拦下的**。
+   *
+   * ⚠️ 和 availableVariants 共用同一套判断,不另写一份 ——
+   *    两份过滤逻辑迟早对不上,那时候「报告说能做、求解器不排」就没法查了。
+   *    这里是 availableVariants 的「带解释版」,后者等价于
+   *    `explain(...).variants.filter(v => v.ok)`。
+   */
+  function explain(recipe, cfg) {
+    cfg = cfg || {};
+    var out = { recipe: recipe, ok: false, dishReasons: [], variants: [] };
+
+    if (!equipmentOK(recipe, cfg.equipment)) {
+      out.dishReasons.push('厨具不够(' + ((recipe.equipmentRequired || []).join(' + ') || '?') + ')');
+    }
+    if (cfg.maxSpicy != null && recipe.spicy > cfg.maxSpicy) {
+      out.dishReasons.push('太辣(' + ['不辣', '微辣', '中辣', '重辣'][recipe.spicy] + ')');
+    }
+
+    (recipe.variants || []).forEach(function (v) {
+      var why = out.dishReasons.slice();
+      if (cfg.maxActiveMinutes != null && v.activeMinutes > cfg.maxActiveMinutes) {
+        why.push('动手 ' + v.activeMinutes + ' 分,超过 ' + cfg.maxActiveMinutes);
+      }
+      if (cfg.maxDifficulty != null && v.difficulty > cfg.maxDifficulty) {
+        why.push('难度 ' + v.difficulty + ',超过 ' + cfg.maxDifficulty);
+      }
+      if (typeof Timing !== 'undefined') {
+        var t = Timing.ofMeal(v, null);
+        if (cfg.allowOvernight === false && t.overnight) {
+          why.push('要隔夜(' + (v.aheadOfTime || '隔夜') + ')');
+        }
+        if (cfg.maxIdleWait != null && t.idle > cfg.maxIdleWait) {
+          why.push('要等 ' + Timing.fmt(t.idle) + ',超过 ' + Timing.fmt(cfg.maxIdleWait));
+        }
+      }
+      if (variantHasBlacklisted(v, cfg.blacklist)) {
+        var bad = {};
+        (cfg.blacklist || []).forEach(function (b) { bad[b] = 1; });
+        var hit = (v.ingredients || []).concat(v.seasonings || []).filter(function (it) {
+          return it.ids.length > 0 && it.ids.every(function (id) { return bad[id]; });
+        }).map(function (it) { return it.names[0]; });
+        why.push('忌口:' + hit.join(' · '));
+      }
+      if (v.equipmentRequired && v.equipmentRequired.length &&
+          !equipmentOK(recipe, cfg.equipment, v.equipmentRequired)) {
+        why.push('这一档还要 ' + v.equipmentRequired.join(' + '));
+      }
+      out.variants.push({ prepLevel: v.prepLevel, variant: v, ok: why.length === 0, reasons: why });
+      if (!why.length) out.ok = true;
+    });
+    return out;
+  }
+
   /** 配置下可做的菜数。冷启动时实时显示,让取舍立刻看得见。 */
   function countAvailable(cfg) {
     var dishes = 0, variants = 0;
@@ -192,6 +246,7 @@ var Catalog = (function () {
     equipmentOK: equipmentOK, availableVariants: availableVariants,
     variantHasBlacklisted: variantHasBlacklisted,   // 导出给测试:「或」组的规则容易改坏
     countAvailable: countAvailable, equipmentMarginal: equipmentMarginal,
+    explain: explain,
     commonDislikes: commonDislikes, expandBlacklist: expandBlacklist,
   };
 })();
