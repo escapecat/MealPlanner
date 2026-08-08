@@ -11,7 +11,7 @@
 
 var RecipesUI = (function () {
 
-  var el, q = '', groupBy = 'file', openG = {}, openD = {}, onlyDoable = false,
+  var el, q = '', groupBy = 'file', openG = {}, openD = {}, view = 'all',
       composing = false;      // 中文输入法正在组字 —— 这期间不能重渲染
 
   function h(tag, attrs, kids) {
@@ -551,6 +551,71 @@ var RecipesUI = (function () {
     }
   }
 
+  /** 被排除的菜 —— **按原因分组**,而不是按菜系。
+   *
+   *  这一屏要回答的是「我该去改哪条设置」,所以第一层必须是原因:
+   *  「厨具不够 165 道」比「川湘云贵 40 道」有用得多。
+   *  过滤和原因都走 Catalog.explain(),和求解器同一套判断 ——
+   *  报告和实际排菜不一致是最难查的那种 bug。 */
+  function renderBlocked(w, all) {
+    var cfg = config();
+    var byWhy = {};
+    all.forEach(function (r) {
+      var e = Catalog.explain(r, cfg);
+      if (e.ok) return;
+      // 一道菜所有档位都被拦,取第一档的第一条原因当代表,并抹掉具体数字好归类
+      var first = (e.variants[0] && e.variants[0].reasons[0]) || '未知';
+      var key = first.replace(/[((].*$/, '').replace(/\d+/g, 'N').trim();
+      (byWhy[key] = byWhy[key] || []).push(e);
+    });
+
+    var keys = Object.keys(byWhy).sort(function (a, b) {
+      return byWhy[b].length - byWhy[a].length;
+    });
+    if (!keys.length) {
+      w.appendChild(h('div', { class: 'note' }, ['当前设置下没有被排除的菜。']));
+      return;
+    }
+
+    var top = keys[0];
+    w.appendChild(h('div', { class: 'note' }, [
+      '最大的一条是「**' + top + '**」,占 ' + byWhy[top].length + ' 道。' +
+      '想放宽去「我的 → 厨房与口味」。',
+    ]));
+
+    keys.forEach(function (k) {
+      var rows = byWhy[k];
+      var open = !!openG[k];
+      var card = h('div', { class: 'card', style: 'padding:2px 14px' });
+      card.appendChild(h('div', {
+        style: 'display:flex;gap:8px;align-items:center;padding:11px 0;cursor:pointer' +
+               (open ? ';border-bottom:1px solid var(--border)' : ''),
+        onclick: function () { openG[k] = !open; render(); },
+      }, [
+        h('div', { style: 'flex:1;font-weight:600' }, [k]),
+        h('span', { class: 'hint' }, [rows.length + ' 道']),
+        h('span', { style: 'color:var(--text-dim)' }, [open ? '▴' : '▾']),
+      ]));
+      if (open) {
+        rows.slice().sort(function (a, b) {
+          return a.recipe.name.localeCompare(b.recipe.name, 'zh');
+        }).forEach(function (e) {
+          card.appendChild(h('div', {
+            style: 'padding:7px 0;border-bottom:1px solid var(--border)',
+          }, [
+            h('div', {}, [e.recipe.name]),
+            h('div', { class: 'hint', style: 'color:var(--warn)' }, [
+              e.variants.map(function (v) {
+                return v.prepLevel + ':' + v.reasons.join(' / ');
+              }).join('    |    '),
+            ]),
+          ]));
+        });
+      }
+      w.appendChild(card);
+    });
+  }
+
   /** render() 会把整棵子树重建,输入框跟着被销毁 —— 焦点和光标位置一起没。
    *  给输入框一个稳定 id,重建后按 id 找回来并恢复光标位置。
    *  (中文输入法的组字状态救不回来,那个靠 composition 事件挡住重渲染。) */
@@ -613,21 +678,25 @@ var RecipesUI = (function () {
         }, [o[1]]);
       })));
 
-    // 「我现在能做的」是这个 app 相对一本菜谱书的全部优势 —— 放在能一键切换的位置
+    // 「我现在能做的」是这个 app 相对一本菜谱书的全部优势 —— 放在能一键切换的位置。
+    //
+    // ⚠️ 第三档「排除的」是必须的:光告诉你「还有 209 道做不了」没有用,
+    //    你会想知道**为什么** —— 是厨具不够、太难、还是要隔夜。
+    //    知道原因才知道该去改哪条设置,否则那个数字只是让人焦虑。
     var doableCount = all.filter(doable).length;
-    w.appendChild(h('div', { class: 'chips', style: 'margin-bottom:12px' }, [
-      h('button', {
-        type: 'button', 'aria-pressed': String(onlyDoable),
-        onclick: function () { onlyDoable = !onlyDoable; render(); },
-      }, ['只看我能做的 ' + doableCount]),
-    ]));
-    if (doableCount < all.length) {
-      w.appendChild(h('div', { class: 'hint', style: 'margin:-6px 0 12px' }, [
-        '另外 ' + (all.length - doableCount) + ' 道受厨具 / 忌口 / 耗时上限限制 —— 去「我的」放宽。',
-      ]));
-    }
+    var blocked = all.length - doableCount;
+    w.appendChild(h('div', { class: 'chips', style: 'margin-bottom:12px' },
+      [['all', '全部 ' + all.length], ['can', '我能做的 ' + doableCount],
+       ['cant', '排除的 ' + blocked + ' · 看原因']].map(function (o) {
+        return h('button', {
+          type: 'button', 'aria-pressed': String(view === o[0]),
+          onclick: function () { view = o[0]; openG = {}; render(); },
+        }, [o[1]]);
+      })));
 
-    var pool = onlyDoable ? all.filter(doable) : all;
+    if (view === 'cant') { renderBlocked(w, all); el.appendChild(w); return; }
+
+    var pool = view === 'can' ? all.filter(doable) : all;
     var groups = {};
     pool.forEach(function (r) { (groups[keyOf(r)] = groups[keyOf(r)] || []).push(r); });
     var keys = Object.keys(groups).sort(function (a, b) {
@@ -656,7 +725,11 @@ var RecipesUI = (function () {
     el.appendChild(w);
   }
 
-  function mount(node) { el = node; render(); }
+  /** ⚠️ 每次进这一页都清空搜索词。
+   *    不清的话:你搜了「红烧肉」,切去库存再切回来,还停在搜索结果里,
+   *    看起来像菜谱库只剩三道菜。分组展开状态留着(那是你翻到哪儿了),
+   *    搜索词不留(那是一次性的意图)。 */
+  function mount(node) { el = node; q = ''; render(); }
 
   return { mount: mount };
 })();

@@ -193,6 +193,27 @@ if (loaded === srcs.length) {
     }
   })();
 
+  // 菜谱页的「排除的 · 看原因」是另一条渲染路径,首屏不走它
+  (function () {
+    var node = new El('div');
+    ctx.RecipesUI.mount(node);
+    try {
+      var b = clickable(node, '排除的');
+      ok(!!b, '菜谱页:找得到「排除的 · 看原因」');
+      if (b) {
+        fire(b);
+        var t = txt(node);
+        ok(t.indexOf('厨具不够') >= 0 || t.indexOf('难度') >= 0,
+           '切到「排除的」列出了原因分组');
+        var grp = clickable(node, '厨具不够');
+        if (grp) { fire(grp); ok(txt(node).length > 0, '展开一个原因分组没有崩'); }
+      }
+    } catch (e) {
+      ok(false, '「排除的」视图抛异常:' + e.message);
+      console.log('         ' + (e.stack || '').split(String.fromCharCode(10))[1]);
+    }
+  })();
+
   (function () {
     var node = new El('div');
     ctx.PantryUI.mount(node);
