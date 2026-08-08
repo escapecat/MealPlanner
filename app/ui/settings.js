@@ -63,6 +63,24 @@ var SettingsUI = (function () {
     ]);
   }
 
+  /** 长期配置 → 求解器/目录用的约束对象。
+   *
+   * ⚠️ **只此一处**。以前 kitchenSection 和 costOf 各自手抄一份字段列表,
+   *    结果新加的 maxDifficulty / maxIdleWait / allowOvernight 谁都没补上,
+   *    「当前配置可做 N 道」永远不变。手抄的字段列表一定会漏。
+   *    (Round.effectiveConstraints 做的是同一件事,只是多一层单轮覆盖。) */
+  function constraintsOf(cfg) {
+    return {
+      equipment: cfg.equipment,
+      blacklist: Catalog.expandBlacklist(cfg.blacklist),
+      maxSpicy: cfg.maxSpicy,
+      maxActiveMinutes: cfg.maxActiveMinutes,
+      maxDifficulty: cfg.maxDifficulty,
+      maxIdleWait: cfg.maxIdleWait,
+      allowOvernight: cfg.allowOvernight,
+    };
+  }
+
   // ---------------- 各分区 ----------------
 
   function targetsCard() {
@@ -161,16 +179,13 @@ var SettingsUI = (function () {
     function save(next) { saveConfig({ blacklist: next }); }
 
     function costOf(id) {
-      var withOut = Catalog.countAvailable({
-        equipment: cfg.equipment, maxSpicy: cfg.maxSpicy,
-        maxActiveMinutes: cfg.maxActiveMinutes,
+      // 同样走 constraintsOf —— 这里以前也在手抄字段,漏的和上面那处一样
+      var withOut = Catalog.countAvailable(Object.assign({}, constraintsOf(cfg), {
         blacklist: Catalog.expandBlacklist(list.concat(list.indexOf(id) >= 0 ? [] : [id])),
-      }).dishes;
-      var withIt = Catalog.countAvailable({
-        equipment: cfg.equipment, maxSpicy: cfg.maxSpicy,
-        maxActiveMinutes: cfg.maxActiveMinutes,
+      })).dishes;
+      var withIt = Catalog.countAvailable(Object.assign({}, constraintsOf(cfg), {
         blacklist: Catalog.expandBlacklist(list.filter(function (x) { return x !== id; })),
-      }).dishes;
+      })).dishes;
       return withIt - withOut;
     }
 
@@ -262,11 +277,14 @@ var SettingsUI = (function () {
   function kitchenSection() {
     var cfg = config();
     var box = h('div', { class: 'card' });
-    var c = Catalog.countAvailable({
-      equipment: cfg.equipment,
-      blacklist: Catalog.expandBlacklist(cfg.blacklist),
-      maxSpicy: cfg.maxSpicy, maxActiveMinutes: cfg.maxActiveMinutes,
-    });
+    // ⚠️ **约束项必须全传**,漏一条这个数字就是死的。
+    //    早先只传了 equipment / blacklist / maxSpicy / maxActiveMinutes 四项,
+    //    于是你改难度、改空等、改隔夜,「当前配置可做 375 道」纹丝不动 ——
+    //    看起来像这几条设置没生效(实际求解器是认的,只有这个计数器瞎了)。
+    //    这比不显示还糟:它在用一个假数字告诉你「你的选择没有代价」。
+    //
+    //    抽成函数,别在这儿手抄字段列表 —— 手抄迟早再漏一条。
+    var c = Catalog.countAvailable(constraintsOf(cfg));
 
     var marg = Catalog.equipmentMarginal(cfg);
     box.appendChild(row('厨具',
