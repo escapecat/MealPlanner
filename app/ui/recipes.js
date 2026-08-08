@@ -487,27 +487,38 @@ var RecipesUI = (function () {
     return loop();
   }
 
-  function dishRow(r) {
+  /** 往 list 里追加一道菜的行(展开时再追加详情块)。
+   *
+   * ⚠️ 返回元素而不是直接追加是不行的:.list-row 的分隔线靠
+   *    `border-top` + `:first-child` 去掉第一条。要是每行外面再包一个 div,
+   *    每个 wrapper 里的行都成了 :first-child,**所有分隔线一起消失**。
+   *    所以行和它的详情块必须是列表的**同级**子节点。
+   *
+   * ⚠️ 行用 div 不用 button:展开的详情里有按钮,button 套 button 是非法 HTML,
+   *    浏览器会自己把它拆开,布局直接乱掉。 */
+  function dishRow(r, list) {
     var open = !!openD[r.id];
     var ok = doable(r);
-    var row = h('div', { style: 'padding:8px 0;border-bottom:1px solid var(--border)' });
-
     var head = h('div', {
-      style: 'display:flex;gap:8px;align-items:baseline;cursor:pointer',
+      class: 'list-row',
       onclick: function () { openD[r.id] = !open; render(); },
     });
-    head.appendChild(h('div', { style: 'flex:1' + (ok ? '' : ';color:var(--text-dim)') }, [
-      r.name,
-      r.variants.length > 1
-        ? h('span', { class: 'hint', style: 'margin-left:8px' }, [r.variants.length + ' 档'])
-        : null,
+    head.appendChild(h('div', { class: 'body' }, [
+      h('div', { class: 'ttl' + (ok ? '' : ' dim') }, [
+        r.name,
+        r.variants.length > 1
+          ? h('span', { class: 'xs dim', style: 'margin-left:8px;font-weight:400' },
+              [r.variants.length + ' 档'])
+          : null,
+      ]),
+      h('div', { class: 'sub2' }, [attrLine(r, r.variants[0])]),
     ]));
     if (!ok) head.appendChild(h('span', { class: 'conf conf-C' }, ['做不了']));
-    head.appendChild(h('span', { style: 'color:var(--text-dim);flex:0 0 auto' }, [open ? '▴' : '▾']));
-    row.appendChild(head);
-    row.appendChild(h('div', { class: 'hint' }, [attrLine(r, r.variants[0])]));
-    if (open) row.appendChild(detail(r));
-    return row;
+    head.appendChild(h('span', { class: 'dim' }, [open ? '▴' : '▾']));
+    list.appendChild(head);
+    if (open) {
+      list.appendChild(h('div', { style: 'padding:0 16px 16px' }, [detail(r)]));
+    }
   }
 
   // ---------------- 搜索 ----------------
@@ -541,8 +552,8 @@ var RecipesUI = (function () {
 
     if (byName.length) {
       w.appendChild(h('div', { class: 'hint' }, ['菜名匹配 ' + byName.length + ' 道']));
-      var c1 = h('div', { class: 'card', style: 'padding:4px 16px' });
-      byName.slice(0, 40).forEach(function (r) { c1.appendChild(dishRow(r)); });
+      var c1 = h('div', { class: 'list' });
+      byName.slice(0, 40).forEach(function (r) { dishRow(r, c1); });
       w.appendChild(c1);
       if (byName.length > 40) {
         w.appendChild(h('div', { class: 'hint', style: 'text-align:center' },
@@ -553,8 +564,8 @@ var RecipesUI = (function () {
     if (byIng.length) {
       w.appendChild(h('div', { class: 'hint', style: 'margin-top:12px' },
         ['用到「' + q + '」的 ' + byIng.length + ' 道']));
-      var c2 = h('div', { class: 'card', style: 'padding:4px 16px' });
-      byIng.slice(0, 30).forEach(function (r) { c2.appendChild(dishRow(r)); });
+      var c2 = h('div', { class: 'list' });
+      byIng.slice(0, 30).forEach(function (r) { dishRow(r, c2); });
       w.appendChild(c2);
       if (byIng.length > 30) {
         w.appendChild(h('div', { class: 'hint', style: 'text-align:center' },
@@ -595,18 +606,18 @@ var RecipesUI = (function () {
       '想放宽去「我的 → 厨房与口味」。',
     ]));
 
+    var whyList = h('div', { class: 'list' });
     keys.forEach(function (k) {
       var rows = byWhy[k];
       var open = !!openG[k];
-      var card = h('div', { class: 'card', style: 'padding:4px 16px' });
+      var card = whyList;
       card.appendChild(h('div', {
-        style: 'display:flex;gap:8px;align-items:center;padding:12px 0;cursor:pointer' +
-               (open ? ';border-bottom:1px solid var(--border)' : ''),
+        class: 'list-row',
         onclick: function () { openG[k] = !open; render(); },
       }, [
-        h('div', { style: 'flex:1;font-weight:600' }, [k]),
-        h('span', { class: 'hint' }, [rows.length + ' 道']),
-        h('span', { style: 'color:var(--text-dim)' }, [open ? '▴' : '▾']),
+        h('div', { class: 'body' }, [h('div', { class: 'ttl' }, [k])]),
+        h('span', { class: 'xs dim' }, [rows.length + ' 道']),
+        h('span', { class: 'dim' }, [open ? '▴' : '▾']),
       ]));
       if (open) {
         rows.slice().sort(function (a, b) {
@@ -616,17 +627,21 @@ var RecipesUI = (function () {
           //    排除页最该能点进去看和改 —— 你看到「难度 5,超过 3」,
           //    下一步想的就是「那这道到底是什么」和「能不能按我的情况调」。
           //    第一版只画了菜名 + 原因,是个死胡同:看见了却什么也做不了。
-          var row = dishRow(e.recipe);
-          row.appendChild(h('div', { class: 'hint', style: 'color:var(--warn)' }, [
+          dishRow(e.recipe, card);
+          // 排除原因跟在那一行下面。dishRow 现在直接往容器里追加,
+          // 所以这条也得是容器的同级子节点 —— 行本身是 flex,塞进去会被挤扁。
+          card.appendChild(h('div', {
+            class: 'xs',
+            style: 'color:var(--warn);padding:0 16px 8px',
+          }, [
             e.variants.map(function (v) {
               return v.prepLevel + ':' + v.reasons.join(' / ');
             }).join('    |    '),
           ]));
-          card.appendChild(row);
         });
       }
-      w.appendChild(card);
     });
+    w.appendChild(whyList);
   }
 
   /** render() 会把整棵子树重建,输入框跟着被销毁 —— 焦点和光标位置一起没。
@@ -655,9 +670,11 @@ var RecipesUI = (function () {
     var all = dishes();
 
     w.appendChild(h('h1', {}, ['菜谱']));
+    // ⚠️ 副标题原来把「半成品是什么」和「时间难度是估的」两件事都塞进来了 ——
+    //    第一件在下面分组里点开就明白,第二件在每道菜的详情页说更合适。
+    //    第一屏只报规模。
     w.appendChild(h('p', { class: 'sub' }, [
-      all.length + ' 道菜 · ' + preps().length + ' 个半成品(泡菜/红油/高汤这类,做完进库存供别的菜用)。' +
-      '时间和难度都是估的,没核实过。',
+      all.length + ' 道菜 · ' + preps().length + ' 个半成品 · 时间难度都是估的',
     ]));
 
     // ⚠️ 中文输入法必须挡住组字期间的重渲染。
@@ -716,24 +733,26 @@ var RecipesUI = (function () {
       return groups[b].length - groups[a].length;
     });
 
+    // ⚠️ 原来**每个分组一张 .card** —— 十几个菜系就是十几个带边框和阴影的盒子,
+    //    和采购清单那边一样的毛病。分组是一份清单的几段,不是十几张卡片。
+    //    一个 .list 容器,组标题和菜名都是行。
+    var list = h('div', { class: 'list' });
     keys.forEach(function (k) {
       var open = !!openG[k];
-      var card = h('div', { class: 'card', style: 'padding:4px 16px' });
-      card.appendChild(h('div', {
-        style: 'display:flex;gap:8px;align-items:center;padding:12px 0;cursor:pointer' +
-               (open ? ';border-bottom:1px solid var(--border)' : ''),
+      list.appendChild(h('button', {
+        type: 'button', class: 'list-row',
         onclick: function () { openG[k] = !open; render(); },
       }, [
-        h('div', { style: 'flex:1;font-weight:600' }, [k]),
-        h('span', { class: 'hint' }, [groups[k].length + ' 道']),
-        h('span', { style: 'color:var(--text-dim)' }, [open ? '▴' : '▾']),
+        h('div', { class: 'body' }, [h('div', { class: 'ttl' }, [k])]),
+        h('span', { class: 'xs dim' }, [groups[k].length + ' 道']),
+        h('span', { class: 'dim' }, [open ? '▴' : '▾']),
       ]));
       if (open) {
         groups[k].slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'zh'); })
-          .forEach(function (r) { card.appendChild(dishRow(r)); });
+          .forEach(function (r) { dishRow(r, list); });
       }
-      w.appendChild(card);
     });
+    w.appendChild(list);
 
     el.appendChild(w);
   }
