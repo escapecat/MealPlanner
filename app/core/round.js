@@ -99,6 +99,7 @@ var Round = (function () {
         equipment: (config.equipment || []).slice(),
         maxSpicy: config.maxSpicy,
         maxActiveMinutes: config.maxActiveMinutes,
+        maxDifficulty: config.maxDifficulty,
         maxIdleWait: config.maxIdleWait,
         allowOvernight: config.allowOvernight,
         blacklist: (config.blacklist || []).slice(),
@@ -118,6 +119,7 @@ var Round = (function () {
       maxActiveMinutes: o.maxActiveMinutes != null ? o.maxActiveMinutes : config.maxActiveMinutes,
       // 「多久能吃上」是另一条约束:动手 20 分但锅里焖 90 分钟的菜,
       // 动手上限拦不住它,可你饿着等的就是那 90 分钟。
+      maxDifficulty: o.maxDifficulty != null ? o.maxDifficulty : config.maxDifficulty,
       maxIdleWait: o.maxIdleWait != null ? o.maxIdleWait : config.maxIdleWait,
       allowOvernight: o.allowOvernight != null ? o.allowOvernight : config.allowOvernight,
       blacklist: (config.blacklist || []).concat(o.blacklistAdd || []),

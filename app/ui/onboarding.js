@@ -17,6 +17,12 @@ var Onboarding = (function () {
     blacklist: [],
     maxSpicy: 3,
     maxActiveMinutes: 45,
+    // ⚠️ 这一条以前**根本没有**,于是 cfg.maxDifficulty 一直是 undefined,
+    //    而 Catalog 里写的是 `if (cfg.maxDifficulty != null)` —— 整条跳过。
+    //    求解器一直在用这个字段,可它从来没被赋过值,难度 5 的松鼠鳜鱼、
+    //    天妇罗全套、手擀面就这么一路排出来了。
+    //    默认 3:一个人做饭,难度 4 以上基本是「今天算了吧」。
+    maxDifficulty: 3,
     maxIdleWait: 120,        // 周末做饭:能走开的等最多两小时
     allowOvernight: false,   // 默认不接受隔夜准备
     // ⚠️ 没有「每周预算」—— 135 条包装规格里填了参考价的是 0 条,
@@ -107,6 +113,7 @@ var Onboarding = (function () {
       blacklist: Catalog.expandBlacklist(state.blacklist),
       maxSpicy: state.maxSpicy,
       maxActiveMinutes: state.maxActiveMinutes,
+      maxDifficulty: state.maxDifficulty,
       maxIdleWait: state.maxIdleWait,
       allowOvernight: state.allowOvernight,
     });
@@ -278,6 +285,7 @@ var Onboarding = (function () {
       blacklist: state.blacklist.slice(),
       maxSpicy: state.maxSpicy,
       maxActiveMinutes: state.maxActiveMinutes,
+      maxDifficulty: state.maxDifficulty,
       maxIdleWait: state.maxIdleWait,
       allowOvernight: state.allowOvernight,
       updatedAt: now,
