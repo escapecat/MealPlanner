@@ -80,7 +80,16 @@ for (var seed = 0; seed < N; seed++) {
                  + (x.spec.label ? '(' + x.spec.label + ')' : '');
         }).join(' + ') + ' = ' + p.total + 'g';
         var over = p.total - b.needGrams;
-        if (over > 0) line += '  剩 ' + over + 'g' + (over > b.needGrams ? '  ← 剩的比用的多' : '');
+        // ⚠️ 只对**会烂的**标红。鸡蛋 80g 买 500g、挂面 110g 买 400g 剩得再多也不心疼,
+        //    下周接着用;可西兰花 100g 买 300g 就是真要扔。
+        //    一视同仁地标红会淹掉真问题 —— 我上一版就是这么读的,
+        //    「一轮 5 样剩得比用的多」里有一半是鸡蛋挂面。
+        if (over > 0) {
+          line += '  剩 ' + over + 'g';
+          if (over > b.needGrams) {
+            line += (b.ing.tier === 'fresh') ? '  ← 会烂' : '(放得住)';
+          }
+        }
       } else line += '  ← 没有包装规格,不知道该买多少';
       console.log(line);
     });
