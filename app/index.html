@@ -21,6 +21,9 @@
 <!-- 抽象层:迁小程序时只有 store.js 要改 -->
 <script src="lib/store.js"></script>
 
+<!-- 菜谱校准层:必须在别的 core 模块之前,它会合并「你的校准」进全局 RECIPES -->
+<script src="core/recipebook.js"></script>
+
 <!-- 纯函数层:不碰 DOM,能被 vitest 直接测 -->
 <script src="core/profile.js"></script>
 <script src="core/pinyin.js"></script>

@@ -146,7 +146,168 @@ var RecipesUI = (function () {
       href: 'https://www.xiachufang.com/search/?keyword=' + encodeURIComponent(r.name),
       target: '_blank', rel: 'noopener',
     }, ['搜做法 ↗']));
+
+    box.appendChild(h('button', {
+      class: 'btn ghost',
+      style: 'width:auto;padding:5px 12px;font-size:13px;margin-top:8px;margin-left:6px',
+      onclick: function () { editRecipe(r); },
+    }, [RecipeBook.hasOverride(r.id) ? '改过了 · 再改' : '按我的情况改']));
+
+    if (RecipeBook.hasOverride(r.id)) {
+      var orig = RecipeBook.original(r.id);
+      var ov = (RecipeBook.overrides()[r.id] || {});
+      var diffs = [];
+      var ta = (ov.all || {});
+      Object.keys(ov.byLevel || {}).forEach(function (k) {
+        Object.assign(ta, ov.byLevel[k]);
+      });
+      var ov0 = orig && orig.variants[0];
+      if (ta.activeMinutes != null && ov0) diffs.push('动手 ' + ov0.activeMinutes + ' → ' + ta.activeMinutes + ' 分');
+      if (ta.totalMinutes != null && ov0) diffs.push('总时长 ' + ov0.totalMinutes + ' → ' + ta.totalMinutes + ' 分');
+      if (ta.difficulty != null && ov0) diffs.push('难度 ' + ov0.difficulty + ' → ' + ta.difficulty);
+      if (ta.spicy != null && orig) diffs.push('辣度 ' + orig.spicy + ' → ' + ta.spicy);
+      if (ta.equipmentRequired) diffs.push('厨具改成 ' + (ta.equipmentRequired.join('/') || '无要求'));
+      if (ta.grams) diffs.push(Object.keys(ta.grams).length + ' 样食材改了克数');
+      box.appendChild(h('div', { class: 'note', style: 'margin-top:8px' }, [
+        '**你改过这道**:' + (diffs.join(' · ') || '有改动') +
+        '。库里的原值没动,改的只是你这边的一层。',
+      ]));
+    }
     return box;
+  }
+
+  /**
+   * 按自己的情况校准。
+   *
+   * ⚠️ 这不是「编辑菜谱」—— 库里的事实一个字不动,只记**你和默认值的差**。
+   *    所以以后菜谱库更新了(补了道菜、修了个克数),你的校准仍然贴在新数据上,
+   *    不会把你锁死在一份过期快照里。和包装规格校准是同一个模式。
+   */
+  function editRecipe(r) {
+    var v = r.variants[0];
+    Modal.pick({
+      title: r.name,
+      hint: '改的只是你这边的一层,库里的原值不动,随时能还原。',
+      options: [
+        { key: 'active', label: '动手时间', hint: '现在记 ' + v.activeMinutes + ' 分 —— 你做实际要多久?' },
+        { key: 'total', label: '多久能吃上', hint: '现在记 ' + v.totalMinutes + ' 分(不含提前准备)' },
+        { key: 'difficulty', label: '难度', hint: '现在记 ' + v.difficulty + ' —— 对你来说呢?' },
+        { key: 'spicy', label: '辣度', hint: '现在记 ' + (['不辣', '微辣', '中辣', '重辣'][r.spicy] || r.spicy) },
+      ].concat(
+        (r.equipmentRequired || []).length
+          ? [{ key: 'equip', label: '要用的厨具', hint: '现在记 ' + r.equipmentRequired.join(' + ') }]
+          : []
+      ).concat(
+        (v.ingredients || []).length
+          ? [{ key: 'grams', label: '食材克数', hint: '你一顿实际放多少' }]
+          : []
+      ).concat(
+        RecipeBook.hasOverride(r.id)
+          ? [{ key: 'reset', label: '还原成库里的原值', hint: '丢掉你对这道菜的全部改动', danger: true }]
+          : []
+      ),
+    }).then(function (k) {
+      if (!k) return;
+
+      if (k === 'reset') {
+        return Modal.confirm({
+          title: '还原「' + r.name + '」?',
+          body: '你对这道菜改过的时间/难度/辣度/厨具/克数全部丢掉,回到库里的原值。',
+          ok: '还原', danger: true,
+        }).then(function (yes) { if (yes) { RecipeBook.reset(r.id); render(); } });
+      }
+
+      if (k === 'spicy') {
+        return Modal.pick({
+          title: '你吃着有多辣?',
+          hint: '改了之后「能吃多辣」那条设置会按你的判断筛,不是按库里的。',
+          options: [0, 1, 2, 3].map(function (n) {
+            return { key: String(n), label: ['不辣', '微辣', '中辣', '重辣'][n],
+                     hint: n === r.spicy ? '现在记的就是这个' : null };
+          }),
+        }).then(function (s) {
+          if (s == null) return;
+          RecipeBook.save(r.id, { spicy: parseInt(s, 10) });
+          render();
+        });
+      }
+
+      if (k === 'difficulty') {
+        return Modal.pick({
+          title: '对你来说多难?',
+          options: [1, 2, 3, 4, 5].map(function (n) {
+            return { key: String(n), label: n + ' 级',
+                     hint: n === v.difficulty ? '现在记的就是这个' : null };
+          }),
+        }).then(function (d) {
+          if (d == null) return;
+          RecipeBook.save(r.id, { difficulty: parseInt(d, 10) });
+          render();
+        });
+      }
+
+      if (k === 'equip') {
+        var owned = (config().equipment || []);
+        return Modal.pick({
+          title: '你用什么做这道?',
+          hint: '库里记的是 ' + r.equipmentRequired.join(' + ') +
+                '。改成你实际用的,以后筛「我能做的」才准。',
+          options: (Catalog.equipment() || []).filter(function (e) {
+            return owned.indexOf(e) >= 0;
+          }).map(function (e) {
+            return { key: e, label: e, hint: '就用这一样' };
+          }).concat([{ key: '__none', label: '不需要特殊厨具' }]),
+        }).then(function (e) {
+          if (!e) return;
+          RecipeBook.save(r.id, { equipmentRequired: e === '__none' ? [] : [e] });
+          render();
+        });
+      }
+
+      if (k === 'grams') {
+        return Modal.pick({
+          title: '改哪样的克数?',
+          options: (v.ingredients || []).map(function (it) {
+            return { key: it.ids[0], label: it.names.join('/'),
+                     hint: '现在记 ' + (it.qty || '?') + (it.unit || 'g') };
+          }),
+        }).then(function (id) {
+          if (!id) return;
+          var it = v.ingredients.filter(function (x) { return x.ids[0] === id; })[0];
+          return Modal.ask({
+            title: it.names[0] + ' 你放多少?',
+            hint: '改了之后采购清单和营养核算都按你这个数算。',
+            type: 'number', suffix: it.unit || 'g', value: it.qty || it.grams,
+          }).then(function (g) {
+            if (g == null) return;
+            var n = parseFloat(g);
+            if (isNaN(n) || n <= 0) return;
+            var cur = (RecipeBook.overrideOf(r.id, v.prepLevel) || {}).grams || {};
+            cur = Object.assign({}, cur); cur[id] = n;
+            RecipeBook.save(r.id, { grams: cur }, v.prepLevel);
+            render();
+          });
+        });
+      }
+
+      // 时间两项
+      var isActive = k === 'active';
+      return Modal.ask({
+        title: isActive ? '你动手实际要多久?' : '从下锅到能吃多久?',
+        hint: isActive
+          ? '库里记 ' + v.activeMinutes + ' 分,是估的没测过。填你自己的,以后排菜按你的来。'
+          : '库里记 ' + v.totalMinutes + ' 分。**不含提前腌/泡发的时间**,那个单独记。',
+        type: 'number', suffix: '分钟',
+        value: isActive ? v.activeMinutes : v.totalMinutes,
+        presets: isActive ? null : [{ label: '和动手一样(不用等)', value: v.activeMinutes }],
+      }).then(function (m) {
+        if (m == null) return;
+        var n = parseFloat(m);
+        if (isNaN(n) || n < 0) return;
+        RecipeBook.save(r.id, isActive ? { activeMinutes: n } : { totalMinutes: n }, v.prepLevel);
+        render();
+      });
+    });
   }
 
   function dishRow(r) {
