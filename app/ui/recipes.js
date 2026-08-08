@@ -475,6 +475,82 @@ var RecipesUI = (function () {
     return loop();
   }
 
+  function dishRow(r) {
+    var open = !!openD[r.id];
+    var ok = doable(r);
+    var row = h('div', { style: 'padding:9px 0;border-bottom:1px solid var(--border)' });
+
+    var head = h('div', {
+      style: 'display:flex;gap:8px;align-items:baseline;cursor:pointer',
+      onclick: function () { openD[r.id] = !open; render(); },
+    });
+    head.appendChild(h('div', { style: 'flex:1' + (ok ? '' : ';color:var(--text-dim)') }, [
+      r.name,
+      r.variants.length > 1
+        ? h('span', { class: 'hint', style: 'margin-left:6px' }, [r.variants.length + ' 档'])
+        : null,
+    ]));
+    if (!ok) head.appendChild(h('span', { class: 'conf conf-C' }, ['做不了']));
+    head.appendChild(h('span', { style: 'color:var(--text-dim);flex:0 0 auto' }, [open ? '▴' : '▾']));
+    row.appendChild(head);
+    row.appendChild(h('div', { class: 'hint' }, [attrLine(r, r.variants[0])]));
+    if (open) row.appendChild(detail(r));
+    return row;
+  }
+
+  // ---------------- 搜索 ----------------
+
+  /** ⚠️ 「收录了没有」必须给明确答案。搜不到就说没有,不要静悄悄返回空列表。 */
+  function renderSearch(w) {
+    var ql = q.toLowerCase();
+    var isPy = Pinyin.looksPinyin(q);
+
+    function hitName(r) {
+      return r.name.toLowerCase().indexOf(ql) >= 0 || (isPy && Pinyin.match(r.name, ql));
+    }
+    var byName = dishes().filter(hitName);
+    var byIng = dishes().filter(function (r) {
+      if (byName.indexOf(r) >= 0) return false;
+      return (r.variants || []).some(function (v) {
+        return (v.ingredients || []).some(function (it) {
+          return it.names.some(function (n) {
+            return n.toLowerCase().indexOf(ql) >= 0 || (isPy && Pinyin.match(n, ql));
+          });
+        });
+      });
+    });
+
+    if (!byName.length) {
+      w.appendChild(h('div', { class: 'note warn' }, [
+        '**库里没有叫「' + q + '」的菜。**' +
+        (byIng.length ? '不过有 ' + byIng.length + ' 道菜用到它。' : ''),
+      ]));
+    }
+
+    if (byName.length) {
+      w.appendChild(h('div', { class: 'hint' }, ['菜名匹配 ' + byName.length + ' 道']));
+      var c1 = h('div', { class: 'card', style: 'padding:2px 14px' });
+      byName.slice(0, 40).forEach(function (r) { c1.appendChild(dishRow(r)); });
+      w.appendChild(c1);
+      if (byName.length > 40) {
+        w.appendChild(h('div', { class: 'hint', style: 'text-align:center' },
+          ['还有 ' + (byName.length - 40) + ' 道,搜具体点']));
+      }
+    }
+
+    if (byIng.length) {
+      w.appendChild(h('div', { class: 'hint', style: 'margin-top:12px' },
+        ['用到「' + q + '」的 ' + byIng.length + ' 道']));
+      var c2 = h('div', { class: 'card', style: 'padding:2px 14px' });
+      byIng.slice(0, 30).forEach(function (r) { c2.appendChild(dishRow(r)); });
+      w.appendChild(c2);
+      if (byIng.length > 30) {
+        w.appendChild(h('div', { class: 'hint', style: 'text-align:center' },
+          ['还有 ' + (byIng.length - 30) + ' 道']));
+      }
+    }
+  }
+
   /** render() 会把整棵子树重建,输入框跟着被销毁 —— 焦点和光标位置一起没。
    *  给输入框一个稳定 id,重建后按 id 找回来并恢复光标位置。
    *  (中文输入法的组字状态救不回来,那个靠 composition 事件挡住重渲染。) */

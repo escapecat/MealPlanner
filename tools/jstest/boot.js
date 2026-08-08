@@ -142,6 +142,82 @@ if (loaded === srcs.length) {
       }
     });
 
+  // ⚠️ **光测「挂载后有内容」是不够的。**
+  //    上一版只测到这里,结果菜谱页点开分组照样白屏 —— 因为渲染列表用的
+  //    dishRow / renderSearch 也在同一次改动里被弄丢了,而首屏根本不调它们。
+  //    首屏画得出来 ≠ 能用。每个页面至少要走一条**真实交互路径**。
+  function clickable(root, label) {
+    return root.all().filter(function (c) {
+      return (c.handlers.click || []).length && txt(c).indexOf(label) >= 0;
+    })[0] || null;
+  }
+  function txt(n) {
+    return (n.text || '') + n.all().map(function (c) { return c.text || ''; }).join('');
+  }
+  function fire(n) { n.handlers.click.forEach(function (f) { f({ target: n }); }); }
+
+  (function () {
+    var node = new El('div');
+    ctx.RecipesUI.mount(node);
+    var g = clickable(node, '家常基础');
+    ok(!!g, '菜谱页:找得到「家常基础」分组');
+    if (!g) return;
+    try {
+      fire(g);
+      var rows = node.all().filter(function (c) {
+        return (c.handlers.click || []).length && txt(c).indexOf('▾') >= 0;
+      });
+      ok(rows.length > 1, '展开分组后列出了 ' + (rows.length - 1) + ' 道菜');
+      fire(rows[1]);
+      ok(node.all().length > 0, '点开一道菜没有崩(展开详情)');
+    } catch (e) {
+      ok(false, '菜谱页交互抛异常:' + e.message);
+      console.log('         ' + (e.stack || '').split(String.fromCharCode(10))[1]);
+    }
+  })();
+
+  (function () {
+    var node = new El('div');
+    ctx.RecipesUI.mount(node);
+    try {
+      var inp = node.querySelector('#rec-q');
+      ok(!!inp, '菜谱页:搜索框在');
+      if (inp) {
+        inp.value = '红烧肉';
+        inp.handlers.input[0]({ target: inp });
+        ok(node.all().length > 0, '搜索「红烧肉」没有崩');
+      }
+    } catch (e) {
+      ok(false, '搜索抛异常:' + e.message);
+      console.log('         ' + (e.stack || '').split(String.fromCharCode(10))[1]);
+    }
+  })();
+
+  (function () {
+    var node = new El('div');
+    ctx.PantryUI.mount(node);
+    try {
+      var t = clickable(node, '调料柜');
+      if (t) fire(t);
+      ok(true, '库存页:切到调料柜没有崩');
+    } catch (e) {
+      ok(false, '库存页切标签抛异常:' + e.message);
+    }
+  })();
+
+  (function () {
+    var node = new El('div');
+    ctx.SettingsUI.mount(node);
+    try {
+      var sec = clickable(node, '厨房与口味');
+      ok(!!sec, '我的页:找得到「厨房与口味」');
+      if (sec) { fire(sec); ok(node.all().length > 0, '展开设置分区没有崩'); }
+    } catch (e) {
+      ok(false, '设置页展开分区抛异常:' + e.message);
+      console.log('         ' + (e.stack || '').split(String.fromCharCode(10))[1]);
+    }
+  })();
+
   // 校准层必须真的合并进全局 RECIPES —— 漏了这一步是「显示改了但求解器没改」
   ok(Array.isArray(ctx.RECIPES) && ctx.RECIPES.length > 500,
      'RecipeBook.init() 之后 RECIPES 还在(' + (ctx.RECIPES || []).length + ' 条)');
