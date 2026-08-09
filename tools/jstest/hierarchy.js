@@ -180,7 +180,15 @@ ctx.RoundsUI.mount(node3);
 var t3 = deep(node3);
 ok(t3.length < 1200,
    '攒了 12 轮之后这一页有 ' + t3.length + ' 个字 —— 历史该收成一行一条,不是全铺开');
-ok(/以前的/.test(t3), '12 轮之后没出现「以前的」分组 —— 历史没有收起来');
+// ⚠️ 判据是**行为**不是措辞:改一次分组标题的文案不该让测试挂。
+//    (「以前的」改成「做过的」时它就挂了一次 —— 测的是字面,不是事实。)
+//    真正要的是:12 轮之后,页面上出现的可点行数量和轮次数量对得上,
+//    说明它们被收成了一行一条,而不是每条铺开成一张卡。
+var rows3 = node3.all().filter(function (el) {
+  return (el.className || '').indexOf('list-row') >= 0 && /月.*日/.test(deep(el));
+});
+ok(rows3.length >= 10,
+   '12 轮只找到 ' + rows3.length + ' 条历史行 —— 历史没有收成一行一条');
 
 // 但历史不能藏死:点开得看得到
 var row = node3.all().filter(function (el) {

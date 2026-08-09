@@ -196,6 +196,14 @@ if (page === 'rounds') {
     vm.runInContext('(function(){var rs=Store.get("rounds",[]);rs[0].status="done";' +
                     'rs[0].finishedAt=new Date().toISOString();Store.set("rounds",rs);})()', ctx);
   }
+  if (stage === 'hist') {
+    // 结束之后,把那条历史点开 —— 看看里面是回执还是工作台
+    vm.runInContext('(function(){var rs=Store.get("rounds",[]);rs[0].status="done";' +
+                    'Store.set("rounds",rs);})()', ctx);
+    appDiv.children = [];
+    vm.runInContext('RoundsUI.mount(document.getElementById("app"))', ctx);
+    clickByText(/月.*日/);
+  }
   if (stage === 'many') {
     // 攒了 8 轮之后这一页有多长 —— 每周一轮的话两个月就到这儿
     vm.runInContext('(function(){var rs=Store.get("rounds",[]);var one=rs[0];' +

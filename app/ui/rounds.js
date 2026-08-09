@@ -571,7 +571,10 @@ var RoundsUI = (function () {
     //    那条记录正是这个 app 的立身之本(「攒多了才看得出总剩菠菜」)。
     var over = r.status === 'done' || r.status === 'skipped';
     var phase = (r.status === 'shopping' || r.status === 'planning') ? 'shop' : 'menu';
-    var which = openSec === null ? (over ? '' : phase) : openSec;
+    // ⚠️ 结束了的轮次在历史里**点开才会渲染**,所以这时候菜单直接展开 ——
+    //    你点开一条历史就是为了看做过什么,再让你点第二次折叠条是多余的。
+    //    采购清单折起(那是当时的事,回头看意义不大,想看还能点)。
+    var which = openSec === null ? (over ? 'menu' : phase) : openSec;
     var shopOpen = which === 'shop', menuOpen = which === 'menu';
 
     // ⚠️ 买之前只能给估计,而且要说清楚是估的 ——
@@ -801,7 +804,10 @@ var RoundsUI = (function () {
     //    排期不写回存储:它能从保质期算出来,存下来就会变成对不上的旧账。
     var plan = Schedule.assign(s.meals, r.input.days, r.input.perDay);
 
-    box.appendChild(h('div', { style: 'font-weight:600;margin:16px 0 6px' }, ['做这些']));
+    // ⚠️ 结束了的轮次是**回执**,不是工作台 ——「做这些」是命令式的,
+    //    对一件已经做完的事说「做这些」很怪。做过的就说做过了。
+    box.appendChild(h('div', { style: 'font-weight:600;margin:16px 0 6px' },
+                      [over ? '做过这些' : '做这些']));
 
     // ⚠️ **补不动就得说**。补一份蛋白能拉近差距,但库里能到高蛋白的菜本来就少
     //    (一份典型减脂配置下,293 个可做档位只有 7 个到得了 59g)。
@@ -842,11 +848,15 @@ var RoundsUI = (function () {
     //    一顿两个菜还是两顿,页面上没有一个字回答,而这是看懂整页的前提。
     //    但后半段「你选了 2 天 × 每天 2 顿 = 4 顿」是**把你刚填的东西念一遍**,
     //    卡片头上已经写着「4 顿(2 天 × 2)」了。删掉。
-    box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
-      '**一道菜 = 一顿**' +
-      (r.input.diners > 1 ? '(' + r.input.diners + ' 人份)' : '') +
-      ' · 按最容易坏的先吃排 · 时间是估的',
-    ]));
+    // ⚠️ 「按最容易坏的先吃排 · 时间是估的」是**做之前**要知道的事,
+    //    翻旧账的时候它已经没有意义了 —— 菜都吃完了,还提醒你时间是估的?
+    if (!over) {
+      box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
+        '**一道菜 = 一顿**' +
+        (r.input.diners > 1 ? '(' + r.input.diners + ' 人份)' : '') +
+        ' · 按最容易坏的先吃排 · 时间是估的',
+      ]));
+    }
 
     if (!menuOpen) {
       box.appendChild(secBar('menu', '这几天做什么 · ' + (s.meals || []).length + ' 顿'));
@@ -928,9 +938,9 @@ var RoundsUI = (function () {
         '这一轮结束:排 ' + (s.meals || []).length + ' 顿,做了 ' + done2 + ' 顿。' +
         '冰箱里剩下的东西下一轮会优先排掉。',
       ]));
-      box.appendChild(h('button', {
-        class: 'btn', style: 'margin-top:12px', onclick: openSheet,
-      }, ['再排一轮']));
+      // ⚠️ 这里**不再放「再排一轮」**。结束的轮次现在整条进历史,
+      //    只有点开才看得见 —— 而顶上那个主按钮「＋ 这次要做饭了」
+      //    本来就是干这个的。在历史里再放一个,就又是两个主按钮了。
     }
     return box;
   }
@@ -1425,17 +1435,14 @@ var RoundsUI = (function () {
         w.appendChild(roundCard(r, rs.indexOf(r), rs.length));
       });
 
-      // 一轮刚结束时它还不算「历史」—— 你可能还要看一眼总结、点「再排一轮」。
-      // 所以最近结束的那条也留在上面,再往前的才收进历史。
-      var recent = null;
-      if (!live.length && past.length) {
-        recent = past[past.length - 1];
-        w.appendChild(roundCard(recent, rs.indexOf(recent), rs.length));
-      }
-
-      var older = past.filter(function (x) { return x !== recent; });
+      // ⚠️ 结束了就**整条进历史**,不留在上面。
+      //    第一版给最近结束的那条开了个特例(想着「你可能还要看眼总结」),
+      //    结果它杵在那儿顶着「做这些」「一道菜 = 一顿」这些**工作台的家具**,
+      //    底下再来个「再排一轮」—— 一轮都结束了还摆着这周所有的菜。
+      //    结束的一轮是**回执**,不是工作台;要看就去历史里点开。
+      var older = past;
       if (older.length) {
-        w.appendChild(h('h2', {}, ['以前的 · ' + older.length + ' 轮']));
+        w.appendChild(h('h2', {}, ['做过的 · ' + older.length + ' 轮']));
         var hist = h('div', { class: 'list' });
         older.slice().reverse().forEach(function (r) {
           var md = r.createdAt.slice(5, 10).split('-');
