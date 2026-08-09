@@ -34,9 +34,24 @@ if [ -n "$1" ]; then cat "$1" > "$MSGFILE"; else cat > "$MSGFILE"; fi
 #    而你唯一能想到的办法是删掉图标重装(那会连数据一起清掉)。
 STAMP=$(date +'%m-%d %H:%M')
 VER=$(date +'%m%d%H%M')
-sed -i "s|<meta name=\"build\" content=\"[^\"]*\">|<meta name=\"build\" content=\"$STAMP\">|"     app/index.html
-sed -i -E "s|(<script src=\"[^\":?]+\.js)(\?v=[0-9]+)?\"|?v=$VER\"|g;
-           s|(<link rel=\"stylesheet\" href=\"[^\":?]+\.css)(\?v=[0-9]+)?\"|?v=$VER\"|g"     app/index.html
+sed -i "s|<meta name=\"build\" content=\"[^\"]*\">|<meta name=\"build\" content=\"$STAMP\">|" app/index.html
+# ⚠️ 替换串开头那个 \1 是**反向引用**，把匹配到的标签原样留下。
+#    上一版它在编辑时被吃掉了一层转义，替换串成了光秃秃的 ?v=...，
+#    于是 31 个 script 标签**全被替换成一截查询串**，页面直接白屏 ——
+#    而且是提交推送之后才发现的。
+sed -i -E "s|(<script src=\"[^\":?]+\.js)(\?v=[0-9]+)?\"|\1?v=$VER\"|g" app/index.html
+sed -i -E "s|(<link rel=\"stylesheet\" href=\"[^\":?]+\.css)(\?v=[0-9]+)?\"|\1?v=$VER\"|g" app/index.html
+
+# ⚠️ **打完版本号当场验伤。** 上面那两条 sed 一旦写错（反向引用被吞、
+#    正则多括一层），表现是把整个标签替换掉 —— 而 check.sh 在这之前就跑完了，
+#    根本拦不住。所以在这儿数一遍，不对就退出，不提交。
+n=$(grep -c "<script src=" app/index.html)
+if [ "$n" -lt 5 ]; then
+  echo "✗ 打版本号之后只剩 $n 个 script 标签 —— sed 把标签替换没了"
+  echo "   恢复:git checkout -- app/index.html"
+  rm -f "$MSGFILE"
+  exit 1
+fi
 
 git add -A || { rm -f "$MSGFILE"; exit 1; }
 git commit -F "$MSGFILE"
