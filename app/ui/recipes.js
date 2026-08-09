@@ -626,7 +626,7 @@ var RecipesUI = (function () {
       var open = !!openG[k];
       var card = whyList;
       card.appendChild(h('div', {
-        class: 'list-row',
+        class: 'list-row' + (open ? ' sticky' : ''),
         onclick: function () { openG[k] = !open; render(); },
       }, [
         h('div', { class: 'body' }, [h('div', { class: 'ttl' }, [k])]),
@@ -756,7 +756,9 @@ var RecipesUI = (function () {
     keys.forEach(function (k) {
       var open = !!openG[k];
       list.appendChild(h('button', {
-        type: 'button', class: 'list-row',
+        // ⚠️ 展开时吸顶。最大的一组 121 道菜 —— 展开是 16 屏,
+        //    不吸顶的话你划到一半既不知道自己在哪个菜系里,也收不起来。
+        type: 'button', class: 'list-row' + (open ? ' sticky' : ''),
         onclick: function () { openG[k] = !open; render(); },
       }, [
         h('div', { class: 'body' }, [h('div', { class: 'ttl' }, [k])]),

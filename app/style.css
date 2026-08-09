@@ -352,7 +352,14 @@ input:focus, select:focus {
       容器里用细线分隔,而不是每条都自带一副边框。
       站在货架前要的是「一眼扫完还剩什么」,不是欣赏 8 个圆角矩形。 */
 .list { background: var(--surface); border: 1px solid var(--border);
-        border-radius: var(--r-md); box-shadow: var(--shadow); overflow: hidden; }
+        border-radius: var(--r-md); box-shadow: var(--shadow); }
+/* ⚠️ 这里**不能用 overflow:hidden** 去裁圆角 —— 它会让内部的
+   `position: sticky` 失效(吸顶的分组标题就不吸了)。
+   改成给首尾两行各自加圆角。 */
+.list > :first-child { border-top-left-radius: var(--r-md);
+                       border-top-right-radius: var(--r-md); }
+.list > :last-child  { border-bottom-left-radius: var(--r-md);
+                       border-bottom-right-radius: var(--r-md); }
 .list-row {
   display: flex; align-items: center; gap: var(--s3);
   width: 100%; min-height: 52px; padding: var(--s3) var(--s4);
@@ -390,6 +397,17 @@ input:focus, select:focus {
        transition: border-color .12s var(--ease), color .12s var(--ease); }
 .act:hover { border-color: var(--accent); color: var(--accent); }
 .act.warn  { border-color: var(--warn); color: var(--warn); }
+
+/* 分区标题吸顶。
+   ⚠️ 手机上最难受的一件事:点开一个分区,内容比屏幕长十几倍,
+      划到一半想收起来 —— 而那个开关早飞到屏幕外面去了,得一路划回顶上。
+      实测最大的菜系分组 121 道菜 ≈ **16 屏**;做菜那屏四张菜卡 ≈ 10 屏。
+      标题吸在顶上,划到哪儿都能收,也随时知道自己在哪一段里。
+   ⚠️ top 不是 0:标题栏本身有 1px 边框,贴死了会露出下面内容的一条边。 */
+.sticky { position: sticky; top: -1px; z-index: 5;
+          background: var(--surface); }
+/* 吸住之后给一道分隔线,否则它和下面的内容糊在一起看不出层次 */
+.sticky.stuck, .list-row.sticky { box-shadow: 0 1px 0 var(--border); }
 
 /* 进度条 —— 「还有 8 样没勾」这种话应该看得见,不是读出来的 */
 .prog { height: 4px; border-radius: var(--r-full); background: var(--surface-3);

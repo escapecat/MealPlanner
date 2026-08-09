@@ -9,6 +9,8 @@ var RoundsUI = (function () {
   // 当前阶段用不上的那半,折起来。null = 跟着 status 走,点了就记住用户的选择
   // 每一轮各记各的:{roundId: {shop:bool, menu:bool}}。null = 还没手动点过,跟着阶段走
   var secState = {};
+  // 展开的是哪一顿(做菜那屏一次只摊开一顿)。null = 自动挑「下一顿要做的」
+  var openMeal = null;
   // 翻开的是哪一条历史轮次(一次只翻一条)
   var openPast = null;
 
@@ -589,7 +591,9 @@ var RoundsUI = (function () {
    */
   function secBar(rid, key, label, open) {
     return h('div', {
-      class: 'list-row',
+      // 展开时吸顶 —— 内容比屏幕长十几倍,划到一半得能就地收起来,
+      // 不用一路划回顶上找这个开关
+      class: 'list-row' + (open ? ' sticky' : ''),
       style: 'border:1px solid var(--border);border-radius:var(--r-md);' +
              'margin-bottom:12px;background:var(--surface)',
       onclick: function () {
@@ -920,7 +924,10 @@ var RoundsUI = (function () {
         lastDay = p.day;
       }
       if (menuOpen) {
-        box.appendChild(mealCard(r, p.meal, i, p, slotLabel(p.slot, r.input.perDay)));
+        // 自动展开「第一顿还没做的」;全做完了就都收着
+        var firstTodo = plan.filter(function (x) { return !x.meal.cooked; })[0];
+        box.appendChild(mealCard(r, p.meal, i, p, slotLabel(p.slot, r.input.perDay),
+                                 firstTodo === p));
       }
     });
 
@@ -1004,17 +1011,48 @@ var RoundsUI = (function () {
     return '第 ' + slot + ' 顿';
   }
 
-  function mealCard(r, m, i, sched, slot) {
+  /**
+   * 一顿饭的卡片。
+   *
+   * ⚠️ **一次只摊开一顿。** 四张卡全展开是 200 多行 —— 手机上一屏 15 行左右,
+   *    要划十屏才看完,而且你灶台前只关心当前这顿。
+   *    收起时留一行:「午饭 · 肉末蒸蛋 · 25 分能吃上」——
+   *    这一行正好回答「下一顿是什么、来不来得及」,别的都是做起来才要看的。
+   *
+   * ⚠️ 默认展开哪一顿:**第一顿还没做的**。不是第一顿,也不是最后点过的 ——
+   *    你打开 app 想看的就是「接下来该做哪个」。
+   */
+  function mealCard(r, m, i, sched, slot, autoOpen) {
     var cooking = r.status === 'cooking' || r.status === 'done';
     var rv = variantOf(m);
+    var key = m.recipeId + '#' + i;
+    var open = openMeal === null ? autoOpen : openMeal === key;
+
     var card = h('div', { class: 'card', style: 'padding:12px 12px;margin-bottom:8px' +
                                                 (m.cooked ? ';opacity:.55' : '') });
 
-    var head = h('div', { style: 'display:flex;gap:8px;align-items:baseline' });
+    var head = h('div', {
+      class: open ? 'sticky' : '',
+      style: 'display:flex;gap:8px;align-items:baseline;cursor:pointer',
+      onclick: function () { openMeal = open ? '' : key; render(); },
+    });
     head.appendChild(h('div', { style: 'flex:1' + (m.cooked ? ';text-decoration:line-through' : '') },
       [(slot ? slot + ' · ' : '') + m.name +
        (m.prepLevel !== 'scratch' ? '(' + Dom.label('prepLevel', m.prepLevel) + ')' : '')]));
+    head.appendChild(h('span', { class: 'dim' }, [open ? '▴' : '▸']));
     card.appendChild(head);
+
+    // 收起时只留一行 —— 「这顿是什么 · 多久能吃上」
+    if (!open) {
+      var rv1 = variantOf(m);
+      var sv1 = m.side ? variantOf(m.side) : null;
+      var t1 = Timing.ofMeal(rv1 && rv1.variant, sv1 && sv1.variant);
+      card.appendChild(h('div', { class: 'hint' }, [
+        m.method + ' · ' + Timing.fmt(t1.eatIn) + '能吃上' +
+        (m.cooked ? ' · 做过了' : ''),
+      ]));
+      return card;
+    }
 
     // ⚠️ **先说多久能吃上,再说动手多久。**
     //    你要决定的是「今天来不来得及做这个」,那是 eatIn;

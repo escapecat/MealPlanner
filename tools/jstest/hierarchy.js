@@ -162,6 +162,26 @@ var t2 = deep(node2);
 ok(t2.length < 900,
    '结束之后那一屏还有 ' + t2.length + ' 个字(菜卡多半没折起来)');
 
+// ---- 手机上要划几屏 ----
+//
+// ⚠️ 展开的内容比屏幕长十几倍时,手机上就是灾难:
+//    四张菜卡全铺开 = 200 多行,一屏 15 行的话要划**十屏**,
+//    而收起它的开关早飞到屏幕外面了。
+//    做菜那屏一次只摊开一顿(你灶台前也只做一顿),其余收成一行。
+vm.runInContext('(function(){var rs=Store.get("rounds",[]);' +
+                'rs[0].status="cooking";Store.set("rounds",rs);})()', ctx);
+var nodeC = new El('div');
+ctx.RoundsUI.mount(nodeC);
+var tc = deep(nodeC);
+ok(tc.length < 1100,
+   '做菜那屏 ' + tc.length + ' 个字 —— 菜卡多半又全摊开了(手机上要划十屏)');
+// 但「下一顿」必须是摊开的,否则等于什么都看不到
+ok(/kcal/.test(tc), '一顿都没摊开 —— 该自动展开第一顿还没做的');
+// 展开的那一顿,标题要吸顶(划到一半还能收起来)
+ok(/sticky/.test(JSON.stringify(nodeC.all().map(function (e) {
+     return e.className || (e.attrs || {}).class || ''; }))),
+   '展开的菜卡标题没有吸顶 —— 划下去就找不到收起的地方了');
+
 // ---- 攒了很多轮之后,这一页不能越来越长 ----
 //
 // ⚠️ 真出过:**每一轮都完整渲染,永远累积**。每周做一次的话,

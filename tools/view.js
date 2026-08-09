@@ -139,7 +139,11 @@ function walk(el, d, lines) {
 }
 
 var page = process.argv[2] || 'rounds';
-if (page === 'recipes')  { mem[NS + 'tab'] = 'recipes'; }
+if (page === 'recipes') {
+  mem[NS + 'tab'] = 'recipes';
+  RECIPES_OPEN = (process.argv[3] || '') === 'open';   // recipes-open
+}
+var RECIPES_OPEN = false;
 if (page === 'pantry') {
   mem[NS + 'tab'] = 'pantry';
   // 空状态看不出布局问题 —— 塞几样真库存进去
