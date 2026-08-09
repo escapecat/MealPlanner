@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="build" content="08-10 01:45">
 <meta name="color-scheme" content="light dark">
 <title>一人食计划</title>
 
@@ -18,7 +19,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
 
-<link rel="stylesheet" href="style.css">
+?v=08100145">
 </head>
 <body>
 
@@ -26,45 +27,45 @@
 
 <!-- 数据层:用 <script src> 加载而不是 fetch —— .json 在 file:// 下会被 CORS 拦掉,
      .js 双击就能跑。迁小程序时每个文件末尾那行 module.exports 直接生效。 -->
-<script src="data/ingredients.js"></script>
-<script src="data/recipes.js"></script>
-<script src="data/packages.js"></script>
-<script src="data/pinyin.js"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
 
 <!-- 抽象层:迁小程序时只有 store.js 要改 -->
-<script src="lib/store.js"></script>
+?v=08100145"></script>
 
 <!-- 菜谱校准层:必须在别的 core 模块之前,它会合并「你的校准」进全局 RECIPES -->
-<script src="core/recipebook.js"></script>
+?v=08100145"></script>
 
 <!-- 纯函数层:不碰 DOM,能被 vitest 直接测 -->
-<script src="core/profile.js"></script>
-<script src="core/pinyin.js"></script>
-<script src="core/timing.js"></script>
-<script src="core/equipment.js"></script>
-<script src="core/search.js"></script>
-<script src="core/catalog.js"></script>
-<script src="core/round.js"></script>
-<script src="core/pantry.js"></script>
-<script src="core/nutrition.js"></script>
-<script src="core/meal.js"></script>
-<script src="core/packaging.js"></script>
-<script src="core/specpriority.js"></script>
-<script src="core/schedule.js"></script>
-<script src="core/stats.js"></script>
-<script src="core/solver.js"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
 <!-- 一轮做饭的业务逻辑 —— 必须在 ui/rounds.js 之前,而且要在 solver 之后 -->
-<script src="core/roundflow.js"></script>
+?v=08100145"></script>
 
 <!-- 展示层:只做渲染和事件绑定 -->
-<script src="ui/dom.js"></script>
-<script src="ui/modal.js"></script>
-<script src="ui/onboarding.js"></script>
-<script src="ui/rounds.js"></script>
-<script src="ui/settings.js"></script>
-<script src="ui/recipes.js"></script>
-<script src="ui/pantry.js"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
+?v=08100145"></script>
 
-<script src="app.js"></script>
+?v=08100145"></script>
 </body>
 </html>

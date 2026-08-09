@@ -570,8 +570,46 @@ var SettingsUI = (function () {
     w.appendChild(h('div', { class: 'hint', style: 'margin-top:16px;text-align:center' }, [
       '找调味料?在「库存 → 调料柜」',
     ]));
+
+    // ---- 版本 ----
+    //
+    // ⚠️ 加到主屏之后**没有地址栏可以下拉刷新**,而 Service Worker
+    //    会把旧版本一直端给你 —— 表现是「明明改了怎么还是老样子」,
+    //    而你唯一能想到的办法是删掉图标重装(那会连数据一起清掉)。
+    //    所以必须有一个「我就要最新版」的按钮,并且显示构建时间,
+    //    让你能确认拿到的到底是哪一版。
+    var build = null;
+    try {
+      var m = document.querySelector('meta[name="build"]');
+      build = m && m.getAttribute('content');
+    } catch (e) {}
+    w.appendChild(h('div', { class: 'list', style: 'margin-top:24px' }, [
+      h('div', { class: 'list-row', onclick: hardReload }, [
+        h('div', { class: 'body' }, [
+          h('div', { class: 'ttl' }, ['版本 ' + (build || '(未知)')]),
+          h('div', { class: 'sub2' }, ['点一下强制拿最新版 · 不动你的数据']),
+        ]),
+        h('span', { class: 'dim' }, ['▸']),
+      ]),
+    ]));
+
     el.appendChild(w);
     if (section === 'kitchen' && blQ) renderBlHits(config());
+  }
+
+  /** 清掉 Service Worker 缓存再重载。
+   *  ⚠️ **只清缓存,不碰 localStorage** —— 数据一个字节都不动。
+   *     而且只清自己项目前缀的:CacheStorage 按 origin 共享,
+   *     两个 PWA 都在 *.github.io 上,清光了会把另一个的离线缓存也删掉。 */
+  function hardReload() {
+    var done = function () { location.reload(true); };
+    try {
+      if (typeof caches === 'undefined') return done();
+      caches.keys().then(function (names) {
+        return Promise.all(names.filter(function (n) { return n.indexOf('mealplanner') === 0; })
+                               .map(function (n) { return caches.delete(n); }));
+      }).then(done, done);
+    } catch (e) { done(); }
   }
 
   function mount(node, opts) { el = node; onNav = (opts || {}).onOpenPkg; render(); }

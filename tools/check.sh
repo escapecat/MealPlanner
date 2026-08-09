@@ -32,8 +32,8 @@ done
 # 「添加到主屏幕」那一套引用的文件也得真的在。
 # ⚠️ 少一个的表现是**静默降级**:图标变成页面截图、打开时还挂着地址栏 ——
 #    不报错,而且只有在手机上才看得出来。
-for href in $(grep -o 'href="[^"]*\.\(png\|webmanifest\|css\)"' app/index.html \
-              | sed 's/href="//;s/"//'); do
+for href in $(grep -o 'href="[^"]*\.\(png\|webmanifest\|css\)\(?v=[0-9]*\)\?"' app/index.html \
+              | sed 's/href="//;s/"//;s/?v=[0-9]*$//'); do
   [ -e "app/$href" ] || { echo "✗ index.html 引用了不存在的 $href"; fail=1; }
 done
 for icon in $(grep -o '"src": *"[^"]*"' app/manifest.webmanifest 2>/dev/null \

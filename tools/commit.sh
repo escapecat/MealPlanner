@@ -25,6 +25,19 @@ fi
 MSGFILE=$(mktemp) || exit 1
 if [ -n "$1" ]; then cat "$1" > "$MSGFILE"; else cat > "$MSGFILE"; fi
 
+# 盖构建时间戳 + 给每个资源打版本号。
+#
+# ⚠️ **自动盖,不靠人记得改。** 手动维护的版本号漏更一次就再也没人信它。
+#
+# ⚠️ 光有 meta 里那个时间戳没用 —— 它不影响浏览器要不要重新下载。
+#    资源必须带 ?v=,否则加到主屏之后 Service Worker 会把旧版一直端给你,
+#    而你唯一能想到的办法是删掉图标重装(那会连数据一起清掉)。
+STAMP=$(date +'%m-%d %H:%M')
+VER=$(date +'%m%d%H%M')
+sed -i "s|<meta name=\"build\" content=\"[^\"]*\">|<meta name=\"build\" content=\"$STAMP\">|"     app/index.html
+sed -i -E "s|(<script src=\"[^\":?]+\.js)(\?v=[0-9]+)?\"|?v=$VER\"|g;
+           s|(<link rel=\"stylesheet\" href=\"[^\":?]+\.css)(\?v=[0-9]+)?\"|?v=$VER\"|g"     app/index.html
+
 git add -A || { rm -f "$MSGFILE"; exit 1; }
 git commit -F "$MSGFILE"
 rc=$?
