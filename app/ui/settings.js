@@ -396,6 +396,70 @@ var SettingsUI = (function () {
         a.click();
       },
     }, ['导出备份']));
+    // ---- 导入 ----
+    //
+    // ⚠️ `Store.importAll` **早就写好了,界面上从来没接上** —— 又一个。
+    //    而旁边就摆着「清空重来」:**能删不能恢复**,这是最危险的组合。
+    //    换手机、清缓存、误点清空 —— 任何一个都能让你几个月的记录消失。
+    //
+    // ⚠️ 导入是这个 app 里唯一一个**不可撤销**的写操作。所以:
+    //    先验、再把「要盖掉什么」摆出来、最后才写。
+    function doImport(text) {
+      var payload;
+      try { payload = JSON.parse(text); }
+      catch (e) { Modal.note({ title: '读不了这份文件', body: '不是合法的 JSON。' }); return; }
+      var chk = Store.inspectImport(payload);
+      if (!chk.ok) {
+        Modal.note({ title: '这份备份用不了', body: chk.why });
+        return;
+      }
+      var cur = {
+        rounds: (Store.get('rounds', []) || []).length,
+        pantry: Pantry.items().length,
+      };
+      var s2 = chk.summary;
+      // Modal.hint/body 按 \n 断行(style.css 里 white-space: pre-line)。
+      // ⚠️ 这里用 String.fromCharCode(10) 而不是字面反斜杠 n ——
+      //    这个仓库里已经有五六次因为 heredoc 吃掉反斜杠而写出真换行、
+      //    直接把文件写成语法错误。绕开它。
+      var BR = String.fromCharCode(10);
+      Modal.confirm({
+        title: '用这份备份覆盖现在的数据?',
+        body: '备份里:' + s2.rounds + ' 轮记录 · 冰箱 ' + s2.pantry + ' 项 · ' +
+              '调料 ' + s2.staples + ' 样 · 浪费 ' + s2.waste + ' 笔' +
+              (s2.at ? BR + '导出于 ' + s2.at.slice(0, 10) : '') +
+              BR + BR + '现在这台设备上:' + cur.rounds + ' 轮记录 · 冰箱 ' +
+              cur.pantry + ' 项。' +
+              BR + '**这些会被全部替换掉,不能撤销。**',
+        ok: '覆盖', danger: true,
+      }).then(function (ok) {
+        if (!ok) return;
+        try {
+          Store.importAll(payload);
+          location.reload();
+        } catch (e) {
+          Modal.note({ title: '导入失败', body: e.message });
+        }
+      });
+    }
+
+    var fileIn = h('input', {
+      type: 'file', accept: 'application/json,.json',
+      style: 'display:none',
+      onchange: function (e) {
+        var f = e.target.files && e.target.files[0];
+        if (!f) return;
+        var fr = new FileReader();
+        fr.onload = function () { doImport(String(fr.result)); };
+        fr.readAsText(f);
+      },
+    });
+    box.appendChild(fileIn);
+    box.appendChild(h('button', {
+      class: 'btn ghost', style: 'margin-bottom:8px',
+      onclick: function () { fileIn.click(); },
+    }, ['导入备份']));
+
     box.appendChild(h('button', {
       class: 'btn ghost',
       onclick: function () {
