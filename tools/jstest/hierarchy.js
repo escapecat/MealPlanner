@@ -142,5 +142,26 @@ if (p2.length === 1) {
      '排完之后唯一的主按钮应该是「开始做饭」,实际是「' + deep(p2[0]) + '」');
 }
 
-console.log(fail ? '按钮层级 ' + fail + ' 处不对' : '  按钮层级 ok(三个状态各只有一个主按钮)');
+// ---- 做完一轮之后,不能是死胡同 ----
+//
+// ⚠️ 真出过:结束之后整屏唯一能点的是**红色的「删除这一轮」**,
+//    而且四张菜卡还全铺着(1530 字)。
+//    「做完一轮」的下一步显然是「再排一轮」,不是「把它删了」——
+//    那条记录正是这个 app 的立身之本(攒多了才看得出「总剩菠菜」)。
+vm.runInContext('(function(){var rs=Store.get("rounds",[]);' +
+                'rs[0].status="done";Store.set("rounds",rs);})()', ctx);
+var node2 = new El('div');
+ctx.RoundsUI.mount(node2);
+var p3 = primaries(node2);
+ok(p3.length >= 1, '一轮结束之后一个主按钮都没有 —— 流程走到死胡同了');
+ok(p3.some(function (b) { return /再排一轮|这次要做饭/.test(deep(b)); }),
+   '结束之后的主按钮应该是「再排一轮」,实际是:' + p3.map(deep).join(' / '));
+
+// 结束了的轮次该折起来 —— 它是历史,不是工作台
+var t2 = deep(node2);
+ok(t2.length < 900,
+   '结束之后那一屏还有 ' + t2.length + ' 个字(菜卡多半没折起来)');
+
+console.log(fail ? '按钮层级 ' + fail + ' 处不对'
+                 : '  按钮层级 ok(四个状态各有且只有一个主按钮,结束后不是死胡同)');
 process.exit(fail ? 1 : 0);

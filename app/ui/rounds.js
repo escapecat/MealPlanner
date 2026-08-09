@@ -562,8 +562,14 @@ var RoundsUI = (function () {
     var box = h('div', { style: 'margin-top:12px' });
 
     // 待采购 → 清单在上、菜单折起;开做之后反过来。点过折叠条就按用户的来。
+    // ⚠️ 结束了的轮次**两半都折起** —— 它已经是历史,不是工作台。
+    //    改版前 done 之后四张菜卡照样全铺着(1530 字),做完的菜下面
+    //    还挂着「↩ 没做」,而整屏唯一能点的是红色的「删除这一轮」。
+    //    结束了却还占着一整屏,还暗示你把刚攒的记录删掉 ——
+    //    那条记录正是这个 app 的立身之本(「攒多了才看得出总剩菠菜」)。
+    var over = r.status === 'done' || r.status === 'skipped';
     var phase = (r.status === 'shopping' || r.status === 'planning') ? 'shop' : 'menu';
-    var which = openSec === null ? phase : openSec;
+    var which = openSec === null ? (over ? '' : phase) : openSec;
     var shopOpen = which === 'shop', menuOpen = which === 'menu';
 
     // ⚠️ 买之前只能给估计,而且要说清楚是估的 ——
@@ -912,11 +918,17 @@ var RoundsUI = (function () {
         },
       }, [cooked === meals.length && meals.length ? '全做完了,结束这一轮' : '结束这一轮']));
     } else if (r.status === 'done') {
+      // ⚠️ **每个状态都必须有且只有一个主按钮** —— 这条上面写着,而 done
+      //    以前是个例外:只有一段总结,唯一能点的是红色的「删除这一轮」。
+      //    做完一轮的下一步显然是「再排一轮」,不是「把它删了」。
       var done2 = (s.meals || []).filter(function (x) { return x.cooked; }).length;
       box.appendChild(h('div', { class: 'note' }, [
         '这一轮结束:排 ' + (s.meals || []).length + ' 顿,做了 ' + done2 + ' 顿。' +
         '冰箱里剩下的东西下一轮会优先排掉。',
       ]));
+      box.appendChild(h('button', {
+        class: 'btn', style: 'margin-top:12px', onclick: openSheet,
+      }, ['再排一轮']));
     }
     return box;
   }
