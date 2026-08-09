@@ -103,10 +103,20 @@ var RoundsUI = (function () {
     ]));
 
     // ---- 这次有什么不一样(默认收起,不改就不用点开)----
-    card.appendChild(h('button', {
-      class: 'btn ghost', style: 'margin-top:4px;font-size:14px;padding:8px',
+    // ⚠️ 这是个**展开器**,不是操作 —— 点它什么也没发生,只是多露出几个选项。
+    //    做成整宽 .btn ghost 的话,它和「记下这一次」「取消」三个一样宽一样高
+    //    堆在一起,主次全平了。用列表行的样子:一看就知道是「点开还有」。
+    card.appendChild(h('div', {
+      class: 'list-row',
+      style: 'border:1px solid var(--border);border-radius:var(--r-md);margin-top:8px',
       onclick: function () { draft.more = !draft.more; renderSheet(); },
-    }, [draft.more ? '收起' : '这次有什么不一样?(可跳过)']));
+    }, [
+      h('div', { class: 'body' }, [
+        h('div', { class: 'ttl' }, ['这次有什么不一样?']),
+        h('div', { class: 'sub2' }, ['耗时 · 辣度 · 忌口,只作用于这一次']),
+      ]),
+      h('span', { class: 'dim' }, [draft.more ? '▴' : '▸']),
+    ]));
 
     if (draft.more) {
       var more = h('div', { style: 'margin-top:12px' });
@@ -183,10 +193,13 @@ var RoundsUI = (function () {
       class: 'btn', style: 'margin-top:16px',
       onclick: create,
     }, ['记下这一次']));
-    card.appendChild(h('button', {
-      class: 'btn ghost', style: 'margin-top:8px',
-      onclick: function () { sheetOpen = false; render(); },
-    }, ['取消']));
+    // 取消是三级操作 —— 和主按钮一样宽一样高的话,等于在问「你确定要继续吗」
+    card.appendChild(h('div', { style: 'text-align:center;margin-top:8px' }, [
+      h('button', {
+        class: 'link',
+        onclick: function () { sheetOpen = false; render(); },
+      }, ['取消']),
+    ]));
 
     host.appendChild(card);
   }
@@ -1319,11 +1332,7 @@ var RoundsUI = (function () {
     // 生成完只看见「重新生成 / 删除」,像是在说「做完了?那就删了吧」。
     var foot = h('div', { style: 'display:flex;gap:16px;margin-top:12px;justify-content:center' });
     function link(label, fn, danger) {
-      return h('button', {
-        style: 'background:none;border:0;font:inherit;font-size:12px;cursor:pointer;' +
-               'text-decoration:underline;color:var(--' + (danger ? 'danger' : 'text-dim') + ')',
-        onclick: fn,
-      }, [label]);
+      return h('button', { class: 'link' + (danger ? ' danger' : ''), onclick: fn }, [label]);
     }
     if (r.solved && r.status !== 'done') {
       foot.appendChild(link('重新生成', function () {
@@ -1361,7 +1370,16 @@ var RoundsUI = (function () {
     if (sheetOpen) {
       w.appendChild(h('div', { id: 'sheet' }));
     } else {
-      w.appendChild(h('button', { class: 'btn', onclick: openSheet }, ['＋ 这次要做饭了']));
+      // ⚠️ **一屏只能有一个主按钮。**
+      //    手上还有没做完的轮次时,真正的下一步是那张卡片里的
+      //    「生成采购清单和菜」/「开始做饭」—— 顶上再来一个同样的绿实心按钮,
+      //    两个抢注意力,你不知道该点哪个。
+      //    还想再开一轮当然可以,但那时候它是次要动作,该退成描边。
+      var busy = rs.some(function (x) { return x.status !== 'done' && x.status !== 'skipped'; });
+      w.appendChild(h('button', {
+        class: 'btn' + (busy ? ' ghost' : ''),
+        onclick: openSheet,
+      }, ['＋ 这次要做饭了']));
     }
 
     if (!rs.length && !sheetOpen) {

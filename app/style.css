@@ -216,6 +216,18 @@ input:focus, select:focus {
 .btn.danger { background: var(--danger); color: #fff; }
 .btn.sm { min-height: var(--tap); font-size: var(--t-base); }
 
+/* 三级操作:取消 / 删除 / 重新生成 这类。
+   ⚠️ 之前这一级是每处自己写一串内联样式(background:none;border:0;
+      text-decoration:underline;…),等于第四种按钮风格,而且各写各的。
+      一屏里同时出现「绿实心 / 白描边 / 红下划线」三种权重才叫层级;
+      三个都做成整宽大按钮堆着,等于没有层级 —— 你不知道该点哪个。 */
+.link { background: none; border: 0; padding: var(--s2) var(--s3);
+        font: inherit; font-size: var(--t-xs); cursor: pointer;
+        color: var(--text-dim); text-decoration: underline;
+        text-underline-offset: 2px; }
+.link:hover  { color: var(--text); }
+.link.danger { color: var(--danger); }
+
 /* 并排按钮 —— 改版前每处自己写 display:flex;gap:8px */
 .btn-row { display: flex; gap: var(--s2); }
 .btn-row .btn { width: auto; flex: 1; }
