@@ -77,7 +77,10 @@
       return;
     }
 
-    var page = h('div');
+    // ⚠️ **必须带 .page** —— flex 里那个「吃掉剩余空间并自己滚」的容器。
+    //    少这个 class，内容区不滚、整页也不滚（html 是 overflow:hidden），
+    //    表现是长页面根本翻不下去。
+    var page = h('div', { class: 'page' });
     if (current === 'me') {
       SettingsUI.mount(page);
     } else if (current === 'pantry') {

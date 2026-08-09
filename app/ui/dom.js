@@ -66,12 +66,12 @@ var Dom = (function () {
    *     勾一样食材、改一个数字都会把你弹回顶部 —— 那更烦。
    */
   function toTop() {
+    // ⚠️ 滚的是 **.page**，不是 window。app shell 结构下页面本身
+    //    overflow:hidden 根本不滚，滚 window 等于什么都没做。
     try {
-      if (typeof window !== 'undefined' && window.scrollTo) window.scrollTo(0, 0);
-      if (typeof document !== 'undefined') {
-        if (document.documentElement) document.documentElement.scrollTop = 0;
-        if (document.body) document.body.scrollTop = 0;
-      }
+      var p = typeof document !== 'undefined' && document.querySelector
+                ? document.querySelector('.page') : null;
+      if (p) p.scrollTop = 0;
     } catch (e) {}
   }
 
