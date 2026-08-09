@@ -30,7 +30,7 @@ var PantryUI = (function () {
 
   function now() { return new Date().toISOString(); }
   function items() { return Pantry.items(); }
-  function saveItems(v) { Store.set('pantryItems', v); }
+  var saveItems = Pantry.saveItems;
 
   // ---------------- 冰箱 ----------------
 
@@ -46,50 +46,12 @@ var PantryUI = (function () {
     return '';
   }
 
-  /** 一样东西从冰箱里消失,记一笔 —— **诊断统计唯一的真实数据源。**
-   *
-   * ⚠️ kind 有三种,而且**必须分得开**:
-   *      eaten    吃掉了     —— 记录存在过、也兑现了
-   *      waste    扔了       —— 记录存在过、没兑现  ← 只有这一种算浪费
-   *      mistake  记错了     —— 这条记录**本来就不该存在**
-   *
-   *    分不开的后果不是「统计不精细」,是**分母错**:
-   *    浪费率 = 扔掉 /(吃掉 + 扔掉)。mistake 两头都不该进 ——
-   *    它不是「买了没吃」,是「压根没买」。
-   *
-   * ⚠️ 这三个动作以前在界面上是三个选项,可代码里「吃完了」和「记错了」
-   *    走的是**同一行** `removeItem(id)`,只是后者多问一句确认。
-   *    两个按钮做同一件事,比一个按钮更糟:你得先纠结选哪个,
-   *    纠结完发现选哪个都行,下次就不信这个界面了。
-   *    (调料那儿的「我有」/「买了」踩过一模一样的坑。)
-   *
-   * ⚠️ 必须记 name。老版本只存 ingredientId,而 stats 那边是 `w.name || k` ——
-   *    于是「什么东西总是剩」会印出 **spinach 3 次**,英文 id 直接漏到界面上。
-   *    (「scratch:太辣」是同一类。)
-   *
-   * 存储键仍叫 wasteLog:store.js 的导入校验和 stats 都认这个名字,
-   * 老数据没有 kind,一律按 waste 算 —— 那时候它确实只记浪费。 */
-  function logRemoval(it, kind, grams) {
-    var log = Store.get('wasteLog', []) || [];
-    var ing = Catalog.ingredient(it.ingredientId);
-    log.push({ at: now(), kind: kind, ingredientId: it.ingredientId,
-               name: ing ? ing.name : it.ingredientId, grams: grams,
-               addedAt: it.addedAt, expiresAt: it.expiresAt });
-    Store.set('wasteLog', log);
-  }
-
-  function removeItem(id) {
-    saveItems(items().filter(function (x) { return x.id !== id; }));
-  }
-
-  function setAmount(id, grams) {
-    var list = items();
-    var it = list.filter(function (x) { return x.id === id; })[0];
-    if (!it) return;
-    if (grams <= 0) { removeItem(id); return; }
-    it.amount = grams;
-    saveItems(list);
-  }
+  // ⚠️ 这三个原来是本文件的私有函数,直接写 Store。搬进 core/pantry.js 了 ——
+  //    界面还要为小程序重写一遍,写存储的代码留在渲染层就得写两份。
+  //    「三种消失方式必须分得开」那段设计说明跟着搬过去了,别在这儿找。
+  var logRemoval = Pantry.logRemoval;
+  var removeItem = Pantry.removeItem;
+  var setAmount = Pantry.setAmount;
 
   /**
    * 冰箱里的一样东西。

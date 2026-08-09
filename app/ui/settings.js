@@ -29,14 +29,10 @@ var SettingsUI = (function () {
   function weightLog() { return Store.get('weightLog', []) || []; }
   function curWeight() { var w = weightLog(); return w.length ? w[w.length - 1].kg : null; }
 
-  function saveProfile(patch) {
-    Store.set('profile', Object.assign({}, profile(), patch, { updatedAt: new Date().toISOString() }));
-    render();
-  }
-  function saveConfig(patch) {
-    Store.set('config', Object.assign({}, config(), patch, { updatedAt: new Date().toISOString() }));
-    render();
-  }
+  // ⚠️ 写存储一律走 core —— 界面还要为小程序重写一遍,
+  //    写存储的代码留在渲染层就得写两份。check.sh 有一条 grep 守着。
+  function saveProfile(patch) { Profile.save(patch); render(); }
+  function saveConfig(patch) { Profile.saveConfig(patch); render(); }
 
   function seg(get, set, options) {
     return h('div', { class: 'seg' }, options.map(function (o) {
@@ -141,9 +137,7 @@ var SettingsUI = (function () {
       onchange: function (e) {
         var v = parseFloat(e.target.value);
         if (isNaN(v)) return;
-        var log = weightLog();
-        log.push({ date: new Date().toISOString(), kg: v });
-        Store.set('weightLog', log);
+        Profile.logWeight(v);
         render();
       },
     }), '每次改都会记一条,不是覆盖 —— 目标跟着体重走。已记 ' + weightLog().length + ' 条'));

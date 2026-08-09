@@ -58,10 +58,33 @@ if grep -rn "[^.a-zA-Z_]\(prompt\|alert\)(" app/ui/*.js app/core/*.js app/app.js
   fail=1
 fi
 
-# 求解器的营养项靠 rounds.js 传 target 通电。断了不会报错,只会悄悄排出
+# 求解器的营养项靠 roundflow.js 传 target 通电。断了不会报错,只会悄悄排出
 # 「晚饭 = 一盘青菜」—— 已经发生过一次,这里钉住。
-if ! grep -q "target: target" app/ui/rounds.js; then
-  echo "✗ rounds.js 没把 target 传给 Solver —— 营养打分会整项失效"
+# (原来这行代码住在 ui/rounds.js,2026-08-09 搬进了 core/roundflow.js。)
+if ! grep -q "target: target" app/core/roundflow.js; then
+  echo "✗ roundflow.js 没把 target 传给 Solver —— 营养打分会整项失效"
+  fail=1
+fi
+
+# ---- 分层守卫 ----
+#
+# ⚠️ 界面还要为小程序**重写一遍**。业务逻辑留在渲染层的话就得写两份,
+#    而两份状态机的漂移是静默的:两边都不报错,只是排出来的东西对不上。
+#    所以把「业务外泄」变成一个 grep 能发现的事实。
+
+# core/ 不许碰 DOM —— 碰了就搬不进小程序(那儿根本没有 document)
+if grep -n "document\.\|window\.\|localStorage" app/core/*.js | grep -v "^\S*: *[/*]" \
+   | grep -v "typeof window" | grep -q .; then
+  echo "✗ core/ 里碰了 DOM/浏览器 API —— 那一层要原样搬进小程序,不能有:"
+  grep -n "document\.\|window\.\|localStorage" app/core/*.js | grep -v "^\S*: *[/*]" \
+    | grep -v "typeof window"
+  fail=1
+fi
+
+# ui/ 不许写存储 —— 写存储就是业务,业务归 core/
+if grep -n "Store\.set(" app/ui/*.js | grep -v "^\S*: *[/*]" | grep -q .; then
+  echo "✗ ui/ 里直接写存储了 —— 业务归 core/(见 core/roundflow.js 开头那段):"
+  grep -n "Store\.set(" app/ui/*.js | grep -v "^\S*: *[/*]"
   fail=1
 fi
 

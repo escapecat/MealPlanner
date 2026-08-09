@@ -271,25 +271,9 @@ var Onboarding = (function () {
       });
       return;
     }
-    var now = new Date().toISOString();
-    Store.set('profile', {
-      sex: state.sex, age: state.age, heightCm: state.heightCm,
-      activity: state.activity, goal: state.goal,
-      breakfast: state.breakfast,
-      createdAt: now, updatedAt: now,
-    });
-    // 体重存成时间序列 —— 体重变则 TDEE 变则目标重算(DESIGN 第七节)
-    Store.set('weightLog', [{ date: now, kg: state.weightKg }]);
-    Store.set('config', {
-      equipment: state.equipment.slice(),
-      blacklist: state.blacklist.slice(),
-      maxSpicy: state.maxSpicy,
-      maxActiveMinutes: state.maxActiveMinutes,
-      maxDifficulty: state.maxDifficulty,
-      maxIdleWait: state.maxIdleWait,
-      allowOvernight: state.allowOvernight,
-      updatedAt: now,
-    });
+    // ⚠️ 三份数据一次写完,逻辑在 Profile.saveSetup ——
+    //    写存储的代码不留在渲染层(界面要为小程序重写第二遍)。
+    Profile.saveSetup(state);
     if (Onboarding.onDone) Onboarding.onDone();
   }
 

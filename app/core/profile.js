@@ -151,11 +151,70 @@ var Profile = (function () {
     return { ok: Object.keys(errs).length === 0, errors: errs };
   }
 
+  // ---------------- 存写入口 ----------------
+  //
+  // ⚠️ 这几个原来散在 ui/onboarding.js 和 ui/settings.js 里(直接 Store.set)。
+  //    收进来的理由和 core/roundflow.js 一样:界面还要为小程序重写一遍,
+  //    写存储的代码留在渲染层就得写两份。tools/check.sh 有一条 grep 守着
+  //    「ui/ 里不许出现 Store.set」。
+
+  function get() { return Store.get('profile', {}) || {}; }
+  function save(patch) {
+    var next = Object.assign({}, get(), patch, { updatedAt: new Date().toISOString() });
+    Store.set('profile', next);
+    return next;
+  }
+
+  function config() { return Store.get('config', {}) || {}; }
+  function saveConfig(patch) {
+    var next = Object.assign({}, config(), patch, { updatedAt: new Date().toISOString() });
+    Store.set('config', next);
+    return next;
+  }
+
+  /** ⚠️ 体重存成**时间序列**,不是覆盖 —— 体重变则 TDEE 变则目标重算
+   *     (DESIGN 第七节)。覆盖的话就再也看不出「有没有按预期走」。 */
+  function weightLog() { return Store.get('weightLog', []) || []; }
+  function logWeight(kg, iso) {
+    var log = weightLog();
+    log.push({ date: iso || new Date().toISOString(), kg: kg });
+    Store.set('weightLog', log);
+    return log;
+  }
+  function currentWeight() {
+    var w = weightLog();
+    return w.length ? w[w.length - 1].kg : null;
+  }
+
+  /** 冷启动填完那一下 —— 三份数据一次写完 */
+  function saveSetup(s) {
+    var now = new Date().toISOString();
+    Store.set('profile', {
+      sex: s.sex, age: s.age, heightCm: s.heightCm,
+      activity: s.activity, goal: s.goal, breakfast: s.breakfast,
+      createdAt: now, updatedAt: now,
+    });
+    Store.set('weightLog', [{ date: now, kg: s.weightKg }]);
+    Store.set('config', {
+      equipment: (s.equipment || []).slice(),
+      blacklist: (s.blacklist || []).slice(),
+      maxSpicy: s.maxSpicy,
+      maxActiveMinutes: s.maxActiveMinutes,
+      maxDifficulty: s.maxDifficulty,
+      maxIdleWait: s.maxIdleWait,
+      allowOvernight: s.allowOvernight,
+      updatedAt: now,
+    });
+  }
+
   return {
     ACTIVITY: ACTIVITY, GOAL: GOAL, BREAKFAST: BREAKFAST,
     bmr: bmr, tdee: tdee,
     dailyTargets: dailyTargets, perMeal: perMeal, perPlannedMeal: perPlannedMeal,
     adjustComposition: adjustComposition, validate: validate,
+    get: get, save: save, config: config, saveConfig: saveConfig,
+    weightLog: weightLog, logWeight: logWeight, currentWeight: currentWeight,
+    saveSetup: saveSetup,
   };
 })();
 
