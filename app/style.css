@@ -439,6 +439,22 @@ input:focus, select:focus {
 .tabbar .ic { display: block; font-size: 19px; line-height: 1.35; }
 
 .empty { text-align: center; color: var(--text-dim); padding: var(--s6) var(--s5); }
+
+/* ⚠️ **空状态在剩余空间里垂直居中。**
+   内容就那么点（一个图标 + 两行字），顶在最上面的话下面空掉半屏，
+   看着像页面没加载完 —— 手机屏越高越明显。
+   .wrap 已经撑满 .page 且是 flex 竖排，所以上下 auto margin
+   就是「把剩余空间平均分到我上下」。
+
+   ⚠️ 只管 :last-child。空状态夹在中间时（下面还有别的块），
+      auto margin 会把它和下文擑开一大段 —— 那是另一种难看。
+
+   ⚠️ 只写上下两个方向。左右也写 auto 的话会关掉交叉轴的 stretch，
+      宽度退回按内容算 —— .wrap 刚栽过这个跟头。 */
+.wrap > .empty:last-child {
+  margin-top: auto;
+  margin-bottom: auto;
+}
 .empty .big { font-size: var(--t-xl); margin-bottom: var(--s2); opacity: .7; }
 
 /* ---- 列表 ----
