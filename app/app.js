@@ -87,25 +87,15 @@
     } else {
       RoundsUI.mount(page);
     }
-    fillRest(page);
     root.appendChild(page);
     root.appendChild(renderTabbar());
   }
 
-  /** 把页面最后一块内容容器拉长，占掉 tab 栏以上剩下的空间。
-   *  ⚠️ 空状态那一屏不动 —— 它自己会居中(.wrap-fill)，再拉一次会顶掉居中。 */
-  function fillRest(page) {
-    var wrap = page.querySelector && page.querySelector('.wrap');
-    if (!wrap || (wrap.className || '').indexOf('wrap-fill') >= 0) return;
-    var kids = wrap.children || [];
-    for (var i = kids.length - 1; i >= 0; i--) {
-      var c = (kids[i].className || '');
-      if (c.indexOf('list') >= 0 || c.indexOf('card') >= 0) {
-        kids[i].className = c + ' fill-rest';
-        return;
-      }
-    }
-  }
+  /* ⚠️ fillRest 已删 —— 它依赖 .wrap 的 min-height，而那一行让短页面
+   *  多出可滚动空间，切 tab 时手上的反馈忽有忽无（「上下跳」）。
+   *  底部空白改由「页面底色 = 卡片底色」解决。 */
+
+
 
   render();
 

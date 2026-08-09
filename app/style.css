@@ -138,30 +138,12 @@ body {
    电脑上不明显是因为窗口矮而宽，内容容易填满；手机 19.5:9 特别高，
    同样几行内容只占三分之一，剩下的全露出来 —— 同一个问题被放大了。
    高度减掉 body 已经付过的那几笔(tab 栏 64px + 上下安全区)，否则重复扣减。 */
-.wrap {
-  max-width: 560px; margin: 0 auto; padding: var(--s4);
-  min-height: calc(100svh - var(--tabbar-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  display: flex; flex-direction: column;
-}
-@supports not (height: 100svh) {
-  .wrap { min-height: calc(100vh - var(--tabbar-h)); }
-}
+.wrap { max-width: 560px; margin: 0 auto; padding: var(--s4); }
 /* app.js 渲染完盖上这个 class —— 用 JS 而不是 CSS :last-child，
    因为好几页末尾是按钮或提示文字，CSS 选不中它前面那个列表，
    而直接拉伸最后一个元素会拉出一个巨高的按钮。 */
-.fill-rest {
-  flex: 1 0 auto;
-  /* ⚠️ 负外边距抵消 .wrap 的下内边距。光靠 flex:1 只能撑到内容盒底部，
-     而 .wrap 还有 16px padding-bottom —— 那就是列表底边和 tab 栏之间
-     剩下的最后一条缝。 */
-  margin-bottom: calc(var(--s4) * -1);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-}
-.fill-rest > :last-child {
-  border-bottom-left-radius: 0 !important;
-  border-bottom-right-radius: 0 !important;
-}
+/* .fill-rest 已废弃 —— 它靠拉伸最后一块列表填空白，而那依赖 .wrap 的
+   min-height，那一行会让短页面多出可滚动空间，切 tab 时忽有忽无。 */
 
 h1 { font-size: var(--t-lg); font-weight: 650; margin: var(--s1) 0 var(--s1);
      letter-spacing: -.01em; }
@@ -425,13 +407,6 @@ input:focus, select:focus {
       改成由 JS 显式加 .wrap-fill：哪个页面是空状态，渲染它的代码最清楚。
    ⚠️ 高度要减掉 body 已经付过的那几笔(tab 栏 64px + 上下安全区)，
       否则重复扣减，内容区反而比可视区还矮，底下照样空一截。 */
-.wrap-fill {
-  min-height: calc(100svh - var(--tabbar-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  display: flex; flex-direction: column;
-}
-@supports not (height: 100svh) {
-  .wrap-fill { min-height: calc(100vh - var(--tabbar-h)); }
-}
 .wrap-fill > .empty {
   flex: 1;
   display: flex; flex-direction: column;
