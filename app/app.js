@@ -87,23 +87,31 @@
     } else {
       RoundsUI.mount(page);
     }
-    fillRest(page);
+    var canFill = fillRest(page);
     root.appendChild(page);
     root.appendChild(renderTabbar());
-    fitHeight(page);
+    if (canFill) fitHeight(page);
   }
 
-  /** 让最后一块内容容器吃掉撑出来的空间。 */
+  /** 让最后一块内容容器吃掉撑出来的空间。
+   *  @return true = 找到了能拉伸的东西
+   *
+   *  ⚠️ 返回值**必须被 fitHeight 用上**：找不到可拉伸的容器时
+   *     （最后一个元素是按钮或提示文字），撑高页面就只是撑出一片空的
+   *     内边距 —— 比不撑还空。撑高和填充得绑在一起。
+   */
   function fillRest(page) {
     var wrap = page.querySelector && page.querySelector('.wrap');
-    if (!wrap || (wrap.className || '').indexOf('wrap-fill') >= 0) return;
+    if (!wrap || (wrap.className || '').indexOf('wrap-fill') >= 0) return false;
     var kids = wrap.children || [];
     var last = kids[kids.length - 1];
-    if (!last) return;
+    if (!last) return false;
     var c = (last.className || '');
     if (c.indexOf('list') >= 0 || c.indexOf('card') >= 0) {
       last.className = c + ' fill-rest';
+      return true;
     }
+    return false;
   }
 
   /** 把内容区**正好**撑到 tab 栏顶边。
