@@ -224,6 +224,18 @@ if (loaded === srcs.length) {
         return (c.handlers.click || []).length && txt(c).indexOf('▾') >= 0;
       });
       ok(rows.length > 1, '展开分组后列出了 ' + (rows.length - 1) + ' 道菜');
+      // ⚠️ 但也不能一次全铺。最大的一组 121 道 —— 手机上一屏 15 行的话是 16 屏。
+      //    先给一批,想看全部再点。这条盯着「有没有人把上限去掉」。
+      ok(rows.length < 45, '分组一次只铺 ' + rows.length + ' 道(没有一口气全倒出来)');
+      var more = clickable(node, '全部展开');
+      ok(!!more, '截断的分组给了「全部展开」的出口(截断不能变成看不到)');
+      if (more) {
+        fire(more);
+        var rows2 = node.all().filter(function (c) {
+          return (c.handlers.click || []).length && txt(c).indexOf('▾') >= 0;
+        });
+        ok(rows2.length > rows.length, '点「全部展开」之后列出了 ' + rows2.length + ' 道');
+      }
       fire(rows[1]);
       ok(node.all().length > 0, '点开一道菜没有崩(展开详情)');
     } catch (e) {

@@ -10,6 +10,7 @@
 //    默认看到的是「六个类别 + 各多少道」,不是 512 行。
 
 var RecipesUI = (function () {
+  var showAllG = {};   // 哪几个分组按了「看全部」
 
   var el, q = '', groupBy = 'file', openG = {}, openD = {}, view = 'all',
       composing = false;      // 中文输入法正在组字 —— 这期间不能重渲染
@@ -766,8 +767,23 @@ var RecipesUI = (function () {
         h('span', { class: 'dim' }, [open ? '▴' : '▾']),
       ]));
       if (open) {
-        groups[k].slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'zh'); })
-          .forEach(function (r) { dishRow(r, list); });
+        // ⚠️ 分组不能一次全铺。最大的一组 121 道 —— 手机上一屏 15 行的话
+        //    是**16 屏**。吸顶只解决了「找不到收起的开关」,
+        //    没解决「这个列表本身就没法翻」。
+        //    先给 25 道,想看全部再点 —— 而且多半你是来搜某一道的,
+        //    搜索框就在上面。
+        var LIMIT = 25;
+        var sorted = groups[k].slice()
+          .sort(function (a, b) { return a.name.localeCompare(b.name, 'zh'); });
+        var shown = showAllG[k] ? sorted : sorted.slice(0, LIMIT);
+        shown.forEach(function (r) { dishRow(r, list); });
+        if (sorted.length > shown.length) {
+          list.appendChild(h('div', {
+            class: 'list-row',
+            style: 'justify-content:center;color:var(--accent)',
+            onclick: function () { showAllG[k] = true; render(); },
+          }, ['还有 ' + (sorted.length - shown.length) + ' 道 · 全部展开']));
+        }
       }
     });
     w.appendChild(list);
