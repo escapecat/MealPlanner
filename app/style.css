@@ -47,11 +47,11 @@
      从没和真实高度核对过。 */
   --tabbar-h: 53px;
 
-  --bg:        #f5f6f8;
+  --bg:        #ffffff;
   --surface:   #ffffff;
   --surface-2: #eef0f4;
   --surface-3: #e4e7ec;
-  --border:    #e2e5ea;
+  --border:    #dcdfe6;
   --border-2:  #cfd4dc;
   --text:      #16181d;
   --text-dim:  #656c78;
@@ -74,11 +74,11 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg:        #131519;
+    --bg:        #1c1f25;
     --surface:   #1c1f25;
     --surface-2: #262a31;
     --surface-3: #31363f;
-    --border:    #2e333b;
+    --border:    #333942;
     --border-2:  #3d434d;
     --text:      #e9ebef;
     --text-dim:  #9aa1ac;
@@ -99,6 +99,19 @@
 }
 
 * { box-sizing: border-box; }
+
+/* ⚠️ **底部安全区那一条，颜色不归 tab 栏管，归画布管。**
+ *  window.innerHeight 在全屏模式下不含底部安全区，所以 tab 栏 bottom:0
+ *  只贴到 innerHeight，屏幕实际还往下多 34px —— 那 34px 画的是画布背景，
+ *  而画布背景默认来自 body(--bg，深)，tab 栏是 --surface(浅)，
+ *  于是那排字下面出现一条深色带。
+ *  给 html 显式设背景，body 的背景就不再往画布传播。 */
+/* ⚠️ **页面底色和卡片底色是同一个值。**
+   只要两者有色差，内容不满一屏时就会在卡片结束的地方留下一条可见的边，
+   而它会出现在各种位置：内容区和 tab 栏之间、tab 栏和屏幕底之间、
+   列表圆角旁边。一条条堵是堵不完的 —— 色差本身才是原因。
+   层次改由 border 和阴影提供。 */
+html { background: var(--surface); }
 
 body {
   margin: 0;
