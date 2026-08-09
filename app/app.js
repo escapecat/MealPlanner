@@ -87,54 +87,16 @@
     } else {
       RoundsUI.mount(page);
     }
-    var canFill = fillRest(page);
     root.appendChild(page);
     root.appendChild(renderTabbar());
-    if (canFill) fitHeight(page);
   }
 
-  /** 让最后一块内容容器吃掉撑出来的空间。
-   *  @return true = 找到了能拉伸的东西
-   *
-   *  ⚠️ 返回值**必须被 fitHeight 用上**：找不到可拉伸的容器时
-   *     （最后一个元素是按钮或提示文字），撑高页面就只是撑出一片空的
-   *     内边距 —— 比不撑还空。撑高和填充得绑在一起。
-   */
-  function fillRest(page) {
-    var wrap = page.querySelector && page.querySelector('.wrap');
-    if (!wrap || (wrap.className || '').indexOf('wrap-fill') >= 0) return false;
-    var kids = wrap.children || [];
-    var last = kids[kids.length - 1];
-    if (!last) return false;
-    var c = (last.className || '');
-    if (c.indexOf('list') >= 0 || c.indexOf('card') >= 0) {
-      last.className = c + ' fill-rest';
-      return true;
-    }
-    return false;
-  }
+  /* ⚠️ 这里曾经有 fillRest / fitHeight，用来把内容区撑到 tab 栏。
+   *  撤掉了 —— 每一版都引入新毛病：撑高靠 CSS 单位猜会让短页面多出
+   *  可滚动空间（切 tab 上下跳）；改成实测之后，最后一个元素不是列表的
+   *  页面又会撑出一片空内边距，比不撑还空。
+   *  页面高度回到由内容决定。 */
 
-  /** 把内容区**正好**撑到 tab 栏顶边。
-   *
-   *  ⚠️ **用实测值，不用 CSS 单位去猜。** 上一版是
-   *     `min-height: calc(100svh - 53px - env(...))` —— 100svh 含底部安全区
-   *     而实际可视高度不含，差 34px，于是每个短页面都多出 34px 可以滑动，
-   *     切 tab 时忽能滑忽不能滑，手上就是「上下跳」。
-   *     现在只量 tab 栏顶边在哪，把内容区撑到那儿，没有假设。
-   *
-   *  ⚠️ 先清空再量 —— 上次设的值会把这次的测量顶大，越切越长。
-   */
-  function fitHeight(page) {
-    var wrap = page.querySelector && page.querySelector('.wrap');
-    var bar = document.querySelector && document.querySelector('.tabbar');
-    if (!wrap || !bar || !wrap.getBoundingClientRect) return;
-    try {
-      wrap.style.minHeight = '';
-      var h = Math.floor(bar.getBoundingClientRect().top -
-                         wrap.getBoundingClientRect().top);
-      if (h > 0) wrap.style.minHeight = h + 'px';
-    } catch (e) {}
-  }
 
 
 
