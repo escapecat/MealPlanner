@@ -162,6 +162,37 @@ var t2 = deep(node2);
 ok(t2.length < 900,
    '结束之后那一屏还有 ' + t2.length + ' 个字(菜卡多半没折起来)');
 
+// ---- 攒了很多轮之后,这一页不能越来越长 ----
+//
+// ⚠️ 真出过:**每一轮都完整渲染,永远累积**。每周做一次的话,
+//    两个月就是 8 张卡、3272 个字、113 个可点区域,而且全是已经结束的。
+//    你打开 app 是想看这周吃什么,不是复习两个月前做过啥。
+//
+// 这类退化**不报错也不白屏** —— 只是用得越久越难用,而且是慢慢变糟的,
+// 等你察觉的时候已经忍了很久了。所以得有个数盯着。
+vm.runInContext('(function(){' +
+  'var rs=Store.get("rounds",[]);var one=rs[0];var out=[];' +
+  'for(var i=0;i<12;i++){var c=JSON.parse(JSON.stringify(one));' +
+  'c.id="h"+i;c.status="done";out.push(c);}' +
+  'Store.set("rounds",out);})()', ctx);
+var node3 = new El('div');
+ctx.RoundsUI.mount(node3);
+var t3 = deep(node3);
+ok(t3.length < 1200,
+   '攒了 12 轮之后这一页有 ' + t3.length + ' 个字 —— 历史该收成一行一条,不是全铺开');
+ok(/以前的/.test(t3), '12 轮之后没出现「以前的」分组 —— 历史没有收起来');
+
+// 但历史不能藏死:点开得看得到
+var row = node3.all().filter(function (el) {
+  return (el.handlers.click || []).length &&
+         (el.className || '').indexOf('list-row') >= 0 && /月.*日/.test(deep(el));
+})[0];
+ok(!!row, '历史里找不到可点开的那一行');
+if (row) {
+  row.handlers.click[0]({ preventDefault: function () {}, stopPropagation: function () {} });
+  ok(deep(node3).length > t3.length, '点开一条历史之后内容没变多 —— 展不开等于看不了');
+}
+
 console.log(fail ? '按钮层级 ' + fail + ' 处不对'
-                 : '  按钮层级 ok(四个状态各有且只有一个主按钮,结束后不是死胡同)');
+                 : '  按钮层级 ok(四个状态各一个主按钮 · 结束不是死胡同 · 12 轮不涨页)');
 process.exit(fail ? 1 : 0);

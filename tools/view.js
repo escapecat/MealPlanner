@@ -196,6 +196,12 @@ if (page === 'rounds') {
     vm.runInContext('(function(){var rs=Store.get("rounds",[]);rs[0].status="done";' +
                     'rs[0].finishedAt=new Date().toISOString();Store.set("rounds",rs);})()', ctx);
   }
+  if (stage === 'many') {
+    // 攒了 8 轮之后这一页有多长 —— 每周一轮的话两个月就到这儿
+    vm.runInContext('(function(){var rs=Store.get("rounds",[]);var one=rs[0];' +
+                    'var out=[];for(var i=0;i<8;i++){var c=JSON.parse(JSON.stringify(one));' +
+                    'c.id="r"+i;c.status="done";out.push(c);}Store.set("rounds",out);})()', ctx);
+  }
   // ⚠️ 失败提示走 Modal,而 Modal 挂在 document.body 上不在 #app 里 ——
   //    只看 #app 的话,「排不出来」表现成「点了没反应」,查半天。
   body.children.forEach(function (c) {

@@ -8,6 +8,8 @@ var RoundsUI = (function () {
   var el, sheetOpen = false, draft = null, onOpenPkg = null, showBought = false;
   // 当前阶段用不上的那半,折起来。null = 跟着 status 走,点了就记住用户的选择
   var openSec = null;
+  // 翻开的是哪一条历史轮次(一次只翻一条)
+  var openPast = null;
 
   function h(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -1405,9 +1407,61 @@ var RoundsUI = (function () {
           ['点上面那个按钮,填做几天、每天几顿就行']),
       ]));
     } else {
-      rs.slice().reverse().forEach(function (r, i) {
-        w.appendChild(roundCard(r, rs.length - 1 - i, rs.length));
+      // ⚠️ 改版前**每一轮都完整渲染,永远累积**。每周一轮的话两个月就是
+      //    8 张卡、3272 个字、113 个可点区域,而且全是已经结束的 ——
+      //    你打开 app 是想看这周吃什么,不是复习两个月前做过啥。
+      //
+      // 分成两块:**在办的那一轮**是工作台(完整展开);
+      //           结束了的是历史,一条一行,点开才展开。
+      var live = rs.filter(function (x) {
+        return x.status !== 'done' && x.status !== 'skipped';
       });
+      var past = rs.filter(function (x) {
+        return x.status === 'done' || x.status === 'skipped';
+      });
+
+      // 在办的按时间倒序完整展开。正常只有一条,但不拦着你同时开两轮。
+      live.slice().reverse().forEach(function (r) {
+        w.appendChild(roundCard(r, rs.indexOf(r), rs.length));
+      });
+
+      // 一轮刚结束时它还不算「历史」—— 你可能还要看一眼总结、点「再排一轮」。
+      // 所以最近结束的那条也留在上面,再往前的才收进历史。
+      var recent = null;
+      if (!live.length && past.length) {
+        recent = past[past.length - 1];
+        w.appendChild(roundCard(recent, rs.indexOf(recent), rs.length));
+      }
+
+      var older = past.filter(function (x) { return x !== recent; });
+      if (older.length) {
+        w.appendChild(h('h2', {}, ['以前的 · ' + older.length + ' 轮']));
+        var hist = h('div', { class: 'list' });
+        older.slice().reverse().forEach(function (r) {
+          var md = r.createdAt.slice(5, 10).split('-');
+          var cooked = (r.solved && r.solved.meals || [])
+            .filter(function (m) { return m.cooked; }).length;
+          var isOpen = openPast === r.id;
+          hist.appendChild(h('div', {
+            class: 'list-row',
+            onclick: function () { openPast = isOpen ? null : r.id; render(); },
+          }, [
+            h('div', { class: 'body' }, [
+              h('div', { class: 'ttl' }, [(+md[0]) + '月' + (+md[1]) + '日']),
+              h('div', { class: 'sub2' }, [
+                Round.summarize(r) +
+                (r.solved ? ' · 做了 ' + cooked + ' 顿' : ''),
+              ]),
+            ]),
+            h('span', { class: 'dim' }, [isOpen ? '▴' : '▸']),
+          ]));
+          if (isOpen) {
+            hist.appendChild(h('div', { style: 'padding:0 16px 16px' },
+                               [roundCard(r, rs.indexOf(r), rs.length)]));
+          }
+        });
+        w.appendChild(hist);
+      }
     }
 
     el.appendChild(w);
