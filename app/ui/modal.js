@@ -97,15 +97,31 @@ var Modal = (function () {
    * 选择题 —— 一个动作一个按钮。
    * @param o.options [{key, label, hint, danger}]
    * 返回选中的 key,取消返回 null。
+   *
+   * ⚠️ **选中一项永远不许 resolve 出 undefined。**
+   *    2026-08-09:冰箱那个「···」菜单的选项写成了 `value:` 而不是 `key:`,
+   *    于是三个动作(吃完了 / 扔了 / 记错了)点下去全部 resolve 成 undefined,
+   *    调用方 `if (v === 'eaten') ... else if ...` 一个分支都不进 ——
+   *    **菜单静静地什么也不做**,没有报错、没有关不掉、没有任何迹象。
+   *    连带后果是 wasteLog 一条都写不进去,而它是「什么东西总是剩」
+   *    那条统计的唯一数据源:那条洞察从上线起就不可能触发过。
+   *
+   *    一个词写错就让三个功能和一条统计全哑掉,说明这里不该那么脆。
+   *    所以 value 当 key 的别名收下 —— 但调用方还是统一写 key,
+   *    一个仓库里两种叫法,迟早会错第二次。
    */
   function pick(o) {
     return open(function (box, done) {
       head(box, o.title, o.hint);
       var list = h('div', { class: 'modal-opts' });
       (o.options || []).forEach(function (op) {
+        var key = op.key !== undefined ? op.key : op.value;
+        if (key === undefined && typeof console !== 'undefined') {
+          console.error('Modal.pick:选项「' + op.label + '」没有 key,点了会什么都不做');
+        }
         list.appendChild(h('button', {
           class: 'modal-opt' + (op.danger ? ' danger' : ''),
-          onclick: function () { done(op.key); },
+          onclick: function () { done(key); },
         }, [
           h('div', { class: 'modal-opt-label' }, [op.label]),
           op.hint ? h('div', { class: 'modal-opt-hint' }, [op.hint]) : null,

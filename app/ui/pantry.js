@@ -152,10 +152,15 @@ var PantryUI = (function () {
         e.stopPropagation();           // 别把「打开菜单」变成「改数量」
         Modal.pick({
           title: name + ' ' + Math.round(it.amount) + (it.unit || 'g'),
+          // ⚠️ 字段名是 **key**,不是 value。写错的话 Modal.pick 会 resolve
+          //    成 undefined,下面三个分支一个都不进 —— 整个菜单静静地什么都不干。
+          //    2026-08-09 就是这么坏的,而且坏了不止「记错了」:三个全是死的,
+          //    连带 wasteLog 一条都写不进去。modal.js 现在兜住了这个词,
+          //    但别再写错 —— 一个仓库里两种叫法,迟早还会错第二次。
           options: [
-            { value: 'eaten', label: '吃完了', hint: '从冰箱去掉,不算浪费' },
-            { value: 'waste', label: '扔了',   hint: '记一笔浪费 —— 统计只认这里的数' },
-            { value: 'wrong', label: '记错了', hint: '当没记过,不影响浪费统计',
+            { key: 'eaten', label: '吃完了', hint: '从冰箱去掉,不算浪费' },
+            { key: 'waste', label: '扔了',   hint: '记一笔浪费 —— 统计只认这里的数' },
+            { key: 'wrong', label: '记错了', hint: '当没记过,不影响浪费统计',
               danger: true },
           ],
         }).then(function (v) {

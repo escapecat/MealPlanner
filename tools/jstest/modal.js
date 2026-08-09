@@ -110,6 +110,28 @@ pending.push(
   })()
 );
 
+// --- pick:**选中一项永远不许 resolve 出 undefined** ---
+//
+// ⚠️ 2026-08-09 的真实故障:冰箱「···」菜单的三个选项写成了 `value:` 而不是
+//    `key:`,于是「吃完了 / 扔了 / 记错了」点下去全 resolve 成 undefined,
+//    调用方 `if (v === 'eaten') … else if …` 一个分支都不进 ——
+//    **菜单静静地什么也不干**:不报错、弹层照常关掉、没有任何迹象。
+//    连带 wasteLog 一条都写不进,而它是「什么东西总是剩」那条统计的
+//    唯一数据源 —— 那条洞察从上线起就不可能触发过。
+//
+// 一个词写错就哑掉三个功能加一条统计,说明这里太脆。value 收作别名。
+pending.push(
+  (function () {
+    var p = Modal.pick({ title: 'x', options: [{ value: 'waste', label: '扔了' }] });
+    sheet().click('扔了');
+    return p.then(function (v) {
+      ok(v === 'waste',
+         '选项写成 value 就整条哑掉(实际拿到 ' + JSON.stringify(v) + ')—— ' +
+         'undefined 和「取消」在调用方看来一模一样,这种失败没有任何迹象');
+    });
+  })()
+);
+
 // --- ask:拿到输入值 ---
 pending.push(
   (function () {
