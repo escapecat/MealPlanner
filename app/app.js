@@ -87,8 +87,24 @@
     } else {
       RoundsUI.mount(page);
     }
+    fillRest(page);
     root.appendChild(page);
     root.appendChild(renderTabbar());
+  }
+
+  /** 把页面最后一块内容容器拉长，占掉 tab 栏以上剩下的空间。
+   *  ⚠️ 空状态那一屏不动 —— 它自己会居中(.wrap-fill)，再拉一次会顶掉居中。 */
+  function fillRest(page) {
+    var wrap = page.querySelector && page.querySelector('.wrap');
+    if (!wrap || (wrap.className || '').indexOf('wrap-fill') >= 0) return;
+    var kids = wrap.children || [];
+    for (var i = kids.length - 1; i >= 0; i--) {
+      var c = (kids[i].className || '');
+      if (c.indexOf('list') >= 0 || c.indexOf('card') >= 0) {
+        kids[i].className = c + ' fill-rest';
+        return;
+      }
+    }
   }
 
   render();
