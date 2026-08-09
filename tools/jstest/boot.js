@@ -7,6 +7,10 @@
 //
 // 用最小 DOM 桩,不引 jsdom(项目零依赖,双击 index.html 要能跑)。
 
+// ⚠️ 正则要容忍 `?v=` 版本号(commit.sh 会自动打)并剥掉它。
+//    原来按 `\.js"` 结尾匹配，版本号一加就**一个脚本都加载不到** ——
+//    报出来的却是「XxxUI 没有 mount 方法」，看着像那个模块坏了。
+
 var fs = require('fs');
 var path = require('path');
 var vm = require('vm');
@@ -94,7 +98,18 @@ function makeSandbox() {
 // index.html 里 <script src> 的顺序就是真实加载顺序 —— 照抄,不自己排
 var html = fs.readFileSync(path.join(APP, 'index.html'), 'utf8');
 var srcs = [];
-html.replace(/src="([^"]+\.js)"/g, function (_, s) { srcs.push(s); return _; });
+html.replace(/src="([^"?]+\.js)(?:\?v=\d+)?"/g, function (_, s) { srcs.push(s); return _; });
+
+// ⚠️ **一个都没认出来 = 正则过时了,当场喊出来。**
+//    这个坑今天在两个项目、六个文件里犯了同一次:commit.sh 给资源打上
+//    `?v=时间戳` 之后,所有按 `\.js"` 结尾匹配的地方全都匹配不到 ——
+//    而表现不是「正则错了」,是「一个脚本都没加载」,
+//    于是报出来的是「XxxUI 没有 mount 方法」,看着像那个模块坏了。
+//    静默失效比报错难查得多,所以宁可在这儿粗暴地数一下。
+if (srcs.length < 5) {
+  console.log('  FAIL 只从 index.html 里认出 ' + srcs.length + ' 个脚本 —— 正则过时了');
+  process.exit(1);
+}
 
 var fails = 0;
 function ok(cond, msg) {

@@ -90,7 +90,7 @@ mem[NS + 'staplesConfirmed'] = 'true';
 
 var ctx = vm.createContext(sandbox);
 var html = fs.readFileSync(path.join(APP, 'index.html'), 'utf8');
-html.replace(/src="([^"]+\.js)"/g, function (_, f) {
+html.replace(/src="([^"?]+\.js)(?:\?v=\d+)?"/g, function (_, f) {
   vm.runInContext(fs.readFileSync(path.join(APP, f), 'utf8'), ctx, { filename: f });
   return _;
 });

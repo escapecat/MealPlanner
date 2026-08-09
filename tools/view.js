@@ -98,7 +98,7 @@ mem[NS + 'staplesConfirmed'] = 'true';
 var ctx = vm.createContext(sandbox);
 var html = fs.readFileSync(path.join(APP, 'index.html'), 'utf8');
 var srcs = [];
-html.replace(/src="([^"]+\.js)"/g, function (_, s) { srcs.push(s); return _; });
+html.replace(/src="([^"?]+\.js)(?:\?v=\d+)?"/g, function (_, s) { srcs.push(s); return _; });
 srcs.forEach(function (s) {
   vm.runInContext(fs.readFileSync(path.join(APP, s), 'utf8'), ctx, { filename: s });
 });
