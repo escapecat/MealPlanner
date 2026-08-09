@@ -85,8 +85,7 @@ var RecipesUI = (function () {
       var ok = avail.indexOf(v) >= 0;
       if (r.variants.length > 1) {
         box.appendChild(h('div', { class: 'hint', style: 'margin-top:8px;font-weight:600' }, [
-          ({ scratch: '从头做', assembled: '半成品', readymade: '买现成的' }[v.prepLevel]
-            || v.prepLevel) + (ok ? '' : ' · 当前设置下做不了'),
+          Dom.label('prepLevel', v.prepLevel) + (ok ? '' : ' · 当前设置下做不了'),
         ]));
       }
       // ⚠️ 只有一个档位时不再重复这一行 —— 折叠行的副标题里已经写过一模一样的
@@ -650,7 +649,9 @@ var RecipesUI = (function () {
             style: 'color:var(--warn);padding:0 16px 8px',
           }, [
             e.variants.map(function (v) {
-              return v.prepLevel + ':' + v.reasons.join(' / ');
+              // ⚠️ 不能直接拼 v.prepLevel —— 那是存储层的字面值,
+              //    渲染出来是「scratch:太辣(中辣)」这种中英夹杂
+              return Dom.label('prepLevel', v.prepLevel) + ':' + v.reasons.join(' / ');
             }).join('    |    '),
           ]));
         });

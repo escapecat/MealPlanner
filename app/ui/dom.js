@@ -31,7 +31,31 @@ var Dom = (function () {
     return frag;
   }
 
-  return { text: text };
+  /**
+   * 存储里的枚举值 → 给人看的中文。
+   *
+   * ⚠️ **界面上不许出现存储层的字面值。**
+   *    真出过:排除原因那行直接写 `v.prepLevel + ':' + 原因`,
+   *    渲染出来是「**scratch:太辣(中辣)**」—— 中英夹杂,
+   *    而且 scratch 是数据库里的词,不是人话。
+   *    同一个映射当时写死在 recipes.js 里,别处就照不到。
+   *
+   * ⚠️ 放这儿是因为**三个页面都要用**(菜谱详情、排除原因、菜卡)。
+   *    各写各的必然漏 —— 已经漏过两处了。
+   */
+  var LABEL = {
+    prepLevel: { scratch: '从头做', assembled: '半成品', readymade: '买现成的' },
+    tier:      { fresh: '生鲜', buffer: '可存', staple: '常备' },
+    location:  { fridge: '冷藏', freezer: '冷冻', pantry: '常温' },
+  };
+
+  /** @return 中文;查不到就原样返回(不然界面上会冒出 undefined) */
+  function label(kind, value) {
+    var m = LABEL[kind];
+    return (m && m[value]) || value || '';
+  }
+
+  return { text: text, label: label, LABEL: LABEL };
 })();
 
 if (typeof module !== 'undefined') module.exports = Dom;

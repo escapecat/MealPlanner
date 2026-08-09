@@ -162,6 +162,37 @@ if (misuse.length) {
       '行内用 .act:' + NL + '         ' + misuse.slice(0, 5).join(NL + '         '));
 }
 
+// ---- 7. 界面上不许出现存储层的字面值 ----
+//
+// ⚠️ 真出过:排除原因那行写的是 `v.prepLevel + ':' + 原因`,
+//    渲染出来是「**scratch:太辣(中辣)**」—— 中英夹杂,
+//    而且 scratch 是数据库里的词,不是人话。
+//    同一个中文映射当时写死在 recipes.js 一个地方,别处照不到,
+//    结果 rounds.js 的菜卡也在直接打印 `(assembled)`。
+//
+// 现在只在 Dom.LABEL 一处定义。这条查的是「有没有人又在别处拼字面值」。
+// ⚠️ 判据只留「把字段拼进字符串」这一条。第一版还想按枚举值本身
+//    (scratch / fridge …)去匹配,拼出来的正则又长又难读,而且第一次就写错了
+//    括号(Invalid group,直接跑不起来)。真实的漏法只有一种形状:
+//    `x.prepLevel + '...'`。比较(`=== 'scratch'`)是完全正常的用法,不该拦。
+var leaked = [];
+files.forEach(function (rel) {
+  if (/dom\.js$/.test(rel)) return;                 // 映射表本身
+  var src = fs.readFileSync(path.join(APP, rel), 'utf8');
+  src.split(NL).forEach(function (line, i) {
+    if (/^\s*(\/\/|\*)/.test(line)) return;         // 注释里提到不算
+    if (/\+\s*\w+\.(prepLevel|tier|location)/.test(line) ||
+        /\w+\.(prepLevel|tier|location)\s*\+\s*['"]/.test(line)) {
+      leaked.push(rel + ':' + (i + 1) + '  ' + line.trim().slice(0, 56));
+    }
+  });
+});
+
+if (leaked.length) {
+  bad('把存储层的字面值直接拼进界面(' + leaked.length + ' 处)—— 用 Dom.label():' +
+      NL + '         ' + leaked.slice(0, 5).join(NL + '         '));
+}
+
 console.log(fail ? '间距/令牌 ' + fail + ' 处不对'
                  : '  间距/令牌 ok(内联间距 ' + steps.length + ' 档:' + steps.join('/') + 'px)');
 process.exit(fail ? 1 : 0);

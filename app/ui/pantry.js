@@ -133,7 +133,7 @@ var PantryUI = (function () {
         // ⚠️ 兜底不能少:location 缺失时原来直接把 undefined 印在界面上。
         //    老数据、导入进来的数据都可能没这个字段,而「undefined」是
         //    最糟的失败方式 —— 看着像程序坏了,其实只是少一个字段。
-        ({ fridge: '冷藏', freezer: '冷冻', pantry: '常温' }[it.location] || '存着') +
+        (Dom.label('location', it.location) || '存着') +
         ' · 买于 ' + it.addedAt.slice(5, 10) +
         (it.openedAt ? ' · 已开封' : ''),
       ]),

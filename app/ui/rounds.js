@@ -7,7 +7,8 @@ var RoundsUI = (function () {
 
   var el, sheetOpen = false, draft = null, onOpenPkg = null, showBought = false;
   // 当前阶段用不上的那半,折起来。null = 跟着 status 走,点了就记住用户的选择
-  var openSec = null;
+  // 每一轮各记各的:{roundId: {shop:bool, menu:bool}}。null = 还没手动点过,跟着阶段走
+  var secState = {};
   // 翻开的是哪一条历史轮次(一次只翻一条)
   var openPast = null;
 
@@ -574,18 +575,31 @@ var RoundsUI = (function () {
    * ⚠️ 折起来不等于藏起来:折起的那半永远点得开 ——
    *    「在超市里想起来看一眼这几天做什么」是真实需求,不该逼你换页。
    */
-  // ⚠️ 折叠条**只在那一半收起时才渲染**,所以点它一定是「展开我」——
-  //    不存在「点开着的那条把它收起来」。两半始终恰好开一个,是个手风琴。
-  //    (第一版这里写了 `openSec = open ? '' : id`,那个 '' 分支永远走不到。)
-  function secBar(id, label) {
+  /**
+   * 分区标题栏,兼开关。
+   *
+   * ⚠️ **展开时它也要在。** 第一版写成「只在收起时才渲染」,于是你一点它,
+   *    这一条自己就没了 —— 表现就是「按钮点了就消失」。
+   *    开关必须待在原地,只把箭头从 ▸ 翻成 ▴,内容在它下面长出来。
+   *
+   * ⚠️ 而且**不再是手风琴**。第一版两半互斥(开一个就关另一个),
+   *    结果点「这几天做什么」的同时,上面那一长条采购清单塌成一行,
+   *    整页往上跳一大截,滚动位置全乱 —— 更像「点了没反应/消失了」。
+   *    两个开关各管各的,点谁谁动,上面的东西不动。
+   */
+  function secBar(rid, key, label, open) {
     return h('div', {
       class: 'list-row',
       style: 'border:1px solid var(--border);border-radius:var(--r-md);' +
              'margin-bottom:12px;background:var(--surface)',
-      onclick: function () { openSec = id; render(); },
+      onclick: function () {
+        var st = secState[rid] = secState[rid] || {};
+        st[key] = !open;
+        render();
+      },
     }, [
       h('div', { class: 'body' }, [h('div', { class: 'ttl' }, [label])]),
-      h('span', { class: 'dim' }, ['▸']),
+      h('span', { class: 'dim' }, [open ? '▴' : '▸']),
     ]);
   }
 
@@ -604,8 +618,10 @@ var RoundsUI = (function () {
     // ⚠️ 结束了的轮次在历史里**点开才会渲染**,所以这时候菜单直接展开 ——
     //    你点开一条历史就是为了看做过什么,再让你点第二次折叠条是多余的。
     //    采购清单折起(那是当时的事,回头看意义不大,想看还能点)。
-    var which = openSec === null ? (over ? 'menu' : phase) : openSec;
-    var shopOpen = which === 'shop', menuOpen = which === 'menu';
+    // 没手动点过的话跟着阶段走:待采购看清单,开做了看菜单,翻旧账看菜单。
+    var st = secState[r.id] || {};
+    var shopOpen = st.shop != null ? st.shop : (!over && phase === 'shop');
+    var menuOpen = st.menu != null ? st.menu : (over || phase === 'menu');
 
     // ⚠️ 买之前只能给估计,而且要说清楚是估的 ——
     //    包装规格 99.3% 没核实过,拿它算出「浪费 13%」再报给用户,
@@ -655,10 +671,8 @@ var RoundsUI = (function () {
     //    而同一句话上面的 note 里已经说过一遍、每行括号里还有第三遍。
     //    一屏说三次同一句告诫,等于一次都没说。
     var boughtN = done.length, allN = s.shopping.length;
-    if (!shopOpen) {
-      box.appendChild(secBar('shop',
-        '采购清单 · ' + (todo.length ? '还差 ' + todo.length + ' 样' : '都买齐了')));
-    }
+    box.appendChild(secBar(r.id, 'shop',
+      '采购清单 · ' + (todo.length ? '还差 ' + todo.length + ' 样' : '都买齐了'), shopOpen));
     if (shopOpen) box.appendChild(h('div', { class: 'between', style: 'margin:16px 0 8px' }, [
       h('div', { style: 'font-weight:600' },
         [todo.length ? '还要买 ' + todo.length + ' 样' : '都买齐了']),
@@ -880,16 +894,21 @@ var RoundsUI = (function () {
     //    卡片头上已经写着「4 顿(2 天 × 2)」了。删掉。
     // ⚠️ 「按最容易坏的先吃排 · 时间是估的」是**做之前**要知道的事,
     //    翻旧账的时候它已经没有意义了 —— 菜都吃完了,还提醒你时间是估的?
-    if (!over) {
+
+
+    box.appendChild(secBar(r.id, 'menu',
+      (over ? '做过这些 · ' : '这几天做什么 · ') + (s.meals || []).length + ' 顿', menuOpen));
+
+    // ⚠️ 这句话是**解释下面那些菜卡的**,所以必须跟着菜单一起收放。
+    //    改版前它渲染在 menuOpen 之外 —— 菜单收起来了它还杵着,
+    //    而且让「点开之后菜单真的展开了」那条测试一直是**空过**的:
+    //    它断言的标记不管展开没展开都在。
+    if (!over && menuOpen) {
       box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
         '**一道菜 = 一顿**' +
         (r.input.diners > 1 ? '(' + r.input.diners + ' 人份)' : '') +
         ' · 按最容易坏的先吃排 · 时间是估的',
       ]));
-    }
-
-    if (!menuOpen) {
-      box.appendChild(secBar('menu', '这几天做什么 · ' + (s.meals || []).length + ' 顿'));
     }
     var lastDay = null;
     plan.forEach(function (p, i) {
@@ -994,7 +1013,7 @@ var RoundsUI = (function () {
     var head = h('div', { style: 'display:flex;gap:8px;align-items:baseline' });
     head.appendChild(h('div', { style: 'flex:1' + (m.cooked ? ';text-decoration:line-through' : '') },
       [(slot ? slot + ' · ' : '') + m.name +
-       (m.prepLevel !== 'scratch' ? '(' + m.prepLevel + ')' : '')]));
+       (m.prepLevel !== 'scratch' ? '(' + Dom.label('prepLevel', m.prepLevel) + ')' : '')]));
     card.appendChild(head);
 
     // ⚠️ **先说多久能吃上,再说动手多久。**
