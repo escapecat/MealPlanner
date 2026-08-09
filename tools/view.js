@@ -144,8 +144,9 @@ if (page === 'recipes') {
   RECIPES_OPEN = (process.argv[3] || '') === 'open';   // recipes-open
 }
 var RECIPES_OPEN = false;
-if (page === 'pantry') {
+if (page === 'pantry' || page === 'staples') {
   mem[NS + 'tab'] = 'pantry';
+
   // 空状态看不出布局问题 —— 塞几样真库存进去
   mem[NS + 'pantryItems'] = JSON.stringify([
     { id: 'p1', ingredientId: 'chicken_breast', amount: 500, unit: 'g',
@@ -231,7 +232,7 @@ if (page === 'rounds') {
 }
 
 appDiv.children = [];
-var MOUNT = { rounds: 'RoundsUI', pantry: 'PantryUI', recipes: 'RecipesUI', settings: 'SettingsUI' };
+var MOUNT = { rounds: 'RoundsUI', pantry: 'PantryUI', staples: 'PantryUI', recipes: 'RecipesUI', settings: 'SettingsUI' };
 var mod = MOUNT[page] || 'Rounds';
 try {
   vm.runInContext(mod + '.mount(document.getElementById("app"))', ctx);
@@ -239,6 +240,19 @@ try {
   console.log('挂载 ' + mod + ' 失败:' + e.message);
   console.log((e.stack || '').split('\n').slice(0, 3).join('\n'));
   process.exit(1);
+}
+
+// 调料柜是模块内的 tab 变量,不走存储 —— 挂载后点一下那个按钮
+if (page === 'staples') {
+  function dt(el) {
+    if (el.tagName === '#TEXT') return el.text || '';
+    return (el.text || '') + el.children.map(dt).join('');
+  }
+  var b = appDiv.all().filter(function (el) {
+    return (el.handlers.click || []).length && /调料柜/.test(dt(el));
+  })[0];
+  if (b) b.handlers.click[0]({ preventDefault: function () {} });
+  else console.log('(没找到「调料柜」按钮)');
 }
 
 var lines = [];

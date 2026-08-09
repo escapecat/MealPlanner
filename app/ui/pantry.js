@@ -574,6 +574,31 @@ var PantryUI = (function () {
       return;
     }
 
+    // ---- 主食:**常驻**,不是只在第一次清点时出现 ----
+    //
+    // ⚠️ 这一段原来只画在「第一次开柜子」那一屏里。可那屏只在
+    //    `!Pantry.confirmed()` 时出现 —— **已经点过「就这几样」的人
+    //    再也看不到它**,于是主食永远是白米,而且不知道为什么。
+    //    (我加主食轮换的时候只想着新用户,忘了自己已经确认过柜子了。)
+    //
+    //    搜索框虽然也能加,但它写的是「买了新调料?」—— 没人会想到
+    //    去那儿找糙米。**功能藏在一个只出现一次的地方,等于没有。**
+    if (!q) {
+      var owned = Pantry.STARTER_GRAINS.filter(function (id) { return Pantry.hasStaple(id); });
+      w.appendChild(h('div', { class: 'between', style: 'margin:16px 0 8px' }, [
+        h('div', { style: 'font-weight:600' }, ['主食']),
+        h('div', { class: 'xs dim' },
+          [owned.length > 1 ? '排菜时在这 ' + owned.length + ' 样里换着来'
+                            : '只勾一样就顿顿吃它']),
+      ]));
+      var gl = h('div', { class: 'list', style: 'margin-bottom:16px' });
+      Pantry.STARTER_GRAINS.forEach(function (id) {
+        var ing = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
+        if (ing) gl.appendChild(pickRow(ing, true));
+      });
+      w.appendChild(gl);
+    }
+
     w.appendChild(h('div', { class: 'row' }, [
       h('input', {
         id: 'staple-q',                       // 稳定 id —— keepFocus 靠它把焦点找回来
