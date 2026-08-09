@@ -13,8 +13,12 @@ var APP = path.join(__dirname, '..', '..', 'app');
 global.INGREDIENTS = require(path.join(APP, 'data/ingredients.js'));
 global.RECIPES = require(path.join(APP, 'data/recipes.js'));
 global.PACKAGES = require(path.join(APP, 'data/packages.js'));
-var db = { staples: [{ id: 'rice' }, { id: 'brown_rice' }, { id: 'sweet_potato' }],
-           staplesMigrated: true, staplesConfirmed: true };
+// ⚠️ 主食走 grainPrefs(「我愿意吃哪些」),不是调料柜 —— 那条路已经改掉了。
+//    继续写在 staples 里的话这个夹具就是空的,「换过主食」永远是 0,
+//    而这条测试正好是防「页面重算时主食又变回白米」的:**夹具一空,它就白跑**。
+var db = { staples: [], staplesMigrated: true, staplesConfirmed: true,
+           grainsSplitMigrated: true,
+           grainPrefs: ['rice', 'brown_rice', 'sweet_potato'] };
 global.Store = { get: function (k, f) { return db[k] !== undefined ? db[k] : (f === undefined ? null : f); },
                  set: function (k, v) { db[k] = v; } };
 global.Equipment = require(path.join(APP, 'core/equipment.js'));

@@ -26,20 +26,21 @@ var T = Profile.perPlannedMeal(daily, 'light');
 var CONS = { equipment: ['炒锅', '空气炸锅', '电饭煲'], maxSpicy: 1, maxActiveMinutes: 45,
              maxDifficulty: 3, maxIdleWait: 60, allowOvernight: false, blacklist: [] };
 
-function run(staples, fridge, prefs) {
-  db = staples ? { staples: staples.map(function (id) { return { id: id }; }),
-                   staplesMigrated: true, staplesConfirmed: true,
-                   grainsSplitMigrated: true } : {};
-  db.grainPrefs = prefs || [];
-  // 鲜主食的库存走**冰箱**,不是柜子
+/** @param prefs   「我愿意吃哪些主食」—— 十样一个模型,大米也在里面
+ *  @param fridge  冰箱里现有的克数
+ *  @param cupboard 柜子里还留着什么(老数据没迁干净、或手动加进去的) */
+function run(prefs, fridge, cupboard) {
+  db = { staples: (cupboard || []).map(function (id) { return { id: id }; }),
+         staplesMigrated: true, staplesConfirmed: true,
+         grainsSplitMigrated: true, grainPrefs: prefs || [] };
   db.pantryItems = Object.keys(fridge || {}).map(function (id, i) {
     return { id: 'p' + i, ingredientId: id, amount: fridge[id],
              addedAt: '2026-08-01T00:00:00.000Z', location: 'fridge' };
   });
   Pantry.invalidate && Pantry.invalidate();
-  var kinds = {}, allSame = 0, rounds = 0;
+  var kinds = {}, allSame = 0, rounds = 0, buy = {};
   for (var s = 0; s < 30; s++) {
-    var o = Solver.solve({ servings: 4, constraints: CONS, stock: {}, mustUse: [],
+    var o = Solver.solve({ servings: 4, constraints: CONS, stock: fridge || {}, mustUse: [],
                            target: T, recentRecipeIds: {}, seed: s });
     if (!o.ok) continue;
     rounds++;
@@ -50,9 +51,12 @@ function run(staples, fridge, prefs) {
       kinds[st.name] = (kinds[st.name] || 0) + 1;
       mine[st.ingredientId] = 1;
     });
+    (o.shopping.buy || []).forEach(function (b) {
+      buy[b.ingredientId] = (buy[b.ingredientId] || 0) + b.needGrams;
+    });
     if (Object.keys(mine).length === 1) allSame++;
   }
-  return { kinds: kinds, allSame: allSame, rounds: rounds };
+  return { kinds: kinds, allSame: allSame, rounds: rounds, buy: buy };
 }
 
 // ⓪ 两份清单必须一模一样。
@@ -89,53 +93,87 @@ var vegAlso = Nutrition.STAPLE_CHOICES.filter(function (id) {
 });
 ok(vegAlso.length === 0, '这些主食同时算蔬菜,会两头计:' + vegAlso.join(' '));
 
-// ① 什么都没有 → 还是白米。**不替用户假设他有糙米。**
+// ① 什么都没勾 → 还是白米。**不替用户假设他有糙米。**
 //    「替用户假设他有什么」是这个项目开箱即勾 11 样调料时犯过的错。
 var a = run(null);
 ok(Object.keys(a.kinds).length === 1 && a.kinds['大米'],
-   '储物柜空的时候配了白米以外的东西:' + JSON.stringify(a.kinds));
+   '什么都没勾的时候配了白米以外的东西:' + JSON.stringify(a.kinds));
 
-// ② 柜子里勾几样 → 真的轮换起来。这一条挂了就说明 solver 又没把 staple 传下去。
+// ② 勾几样 → 真的轮换起来。这一条挂了就说明 solver 又没把 staple 传下去。
 var b = run(['rice', 'brown_rice', 'foxtail_millet', 'quinoa']);
 ok(Object.keys(b.kinds).length >= 3,
-   '勾了 4 样干货主食,排出来只有 ' + Object.keys(b.kinds).length + ' 种:' + JSON.stringify(b.kinds));
+   '勾了 4 样主食,排出来只有 ' + Object.keys(b.kinds).length + ' 种:' + JSON.stringify(b.kinds));
 ok(b.allSame < b.rounds * 0.2,
    b.allSame + '/' + b.rounds + ' 轮四顿还是同一种主食 —— 轮换没生效');
 
-// ②b **说了愿意吃红薯,就得真排上 —— 而且不用先有。**
+// ②a **大米也得上采购清单。** 这是用户直接要的:
+//     「我希望大米这种也跟红薯玉米一样,勾了就出现在采购单,
+//       我选采购了多少加到冰箱,然后每次再扣」
 //
-// ⚠️ 这条是补给我自己造的一个洞。把鲜主食搬去冰箱之后,我一度把判据写成
-//    「冰箱里有才算」,听着很对(食材流转嘛),可它是个**死循环**:
+// ⚠️ 以前大米走的是调料柜那条路(勾 = 我家常备),而 staple 档**不进每周清单**。
+//    后果:勾上那天起大米永远不会再出现在采购清单上 —— 柜子没有克数、
+//    Pantry.consume 也只动冰箱,系统就一直认为你有米,直到你自己发现米缸空了。
+//    实测那时候是 20 轮上清单 0 次。
+ok((b.buy.rice || 0) > 0,
+   '勾了大米却一次都没上采购清单 —— 那米吃完了系统永远不知道');
+
+// ⚠️ 而且**柜子里还留着一条「大米」也不行**。
+//    这条才真正咬住那条规则:solver 以前是「tier=staple 且柜子里有 → 跳过」,
+//    米也是 staple 档,于是柜子里有米就永远不上清单。
+//    上面那条夹具的柜子是空的,两种规则跑出来一样,**测不出退化**——
+//    我第一版就是那么写的,把跳过规则改回去照样绿。
+var b2 = run(['rice'], {}, ['rice', 'salt']);
+ok((b2.buy.rice || 0) > 0,
+   '柜子里留着一条「大米」,它就再也不上采购清单了 —— ' +
+   '主食按克算,不该走调料那条「有就跳过」的路');
+
+// ②b 冰箱里够的话就**不该**再上清单 —— 一袋 5kg 能顶几十顿,
+//     天天挂在清单上就是噪音。这条和上一条是一对,少哪个都不对。
+var f = run(['rice'], { rice: 5000 });
+ok(!(f.buy.rice > 0),
+   '冰箱里有 5kg 米还在清单上要你买 —— 「不该天天出现」得是算出来的');
+ok(f.kinds['大米'] > 0, '冰箱里有米却没排米饭:' + JSON.stringify(f.kinds));
+
+// ②c **说了愿意吃就得真排上 —— 而且不用先有。**
+//
+// ⚠️ 这条是补给我自己造的一个洞。我一度把判据写成「冰箱里有才算」,
+//    听着很对(食材流转嘛),可它是个**死循环**:
 //    红薯不被排成主食 → 不会进采购清单 → 冰箱里永远没有 → 永远不会被排。
 //    而且是静默的:主食悄悄退回全白米,页面上一个字都不会提。
 //    「愿意吃」是偏好,「冰箱里有」是库存,两个都得算数。
-var c = run(['rice'], {}, ['sweet_potato']);
+var c = run(['rice', 'sweet_potato']);
 ok(c.kinds['红薯'] > 0,
    '勾了「愿意吃红薯」却一顿都没排上 —— 不排就不会买,不买就更不会排:' +
    JSON.stringify(c.kinds));
 
-// ②c 冰箱里有就更该排上,**跟勾没勾过没关系** —— 那是这个 app 的立身之本
-var e = run(['rice'], { sweet_potato: 600 }, []);
+// ②d 冰箱里有就更该排上,**跟勾没勾过没关系** —— 那是这个 app 的立身之本
+var e = run(['rice'], { sweet_potato: 600 });
 ok(e.kinds['红薯'] > 0,
    '冰箱里躺着 600g 红薯,一顿都没排上:' + JSON.stringify(e.kinds));
 
-// ②d 反过来:既没说愿意吃、冰箱里也没有 → 不许排。不替你假设。
-var d = run(['rice'], {}, []);
+// ②e 反过来:既没勾、冰箱里也没有 → 不许排。不替你假设。
+var d = run(['rice']);
 ok(!d.kinds['红薯'] && !d.kinds['玉米'],
-   '没说愿意吃、冰箱里也没有,却排了鲜主食 —— 那是替用户假设:' + JSON.stringify(d.kinds));
+   '没勾、冰箱里也没有,却排了它 —— 那是替用户假设:' + JSON.stringify(d.kinds));
 
-// ②e 迁移:老用户在柜子里勾过的红薯要**挪进偏好**,不是删掉。
+// ②f 迁移:老用户在柜子里勾过的主食要**挪进偏好**,不是删掉。
 //     ⚠️ 第一版我写的是直接删,理由是「不知道有几克,不能编数进库存」——
-//        理由对,结论错:那个勾从来就不是「我有几克红薯」,是「我愿意吃红薯」。
+//        理由对,结论错:那个勾从来就不是「我有几克」,是「我愿意吃它」。
 //        删掉就是把用户说过的话扔了,而且正好掉进上面那个死循环。
+//     ⚠️ 但**确实不给它编一份库存**:挪完冰箱是空的,下一轮它自己会
+//        出现在采购清单上,你填实际克数 —— 账目自己就理顺了。
 db = { staples: [{ id: 'rice' }, { id: 'sweet_potato' }, { id: 'salt' }],
        staplesMigrated: true, staplesConfirmed: true, pantryItems: [] };
 Pantry.invalidate && Pantry.invalidate();
 Pantry.ensureInit();
-ok(!Pantry.hasStaple('sweet_potato'), '柜子里的红薯没迁走,调料柜里还会冒出一条「红薯」');
-ok(Pantry.wantsGrain('sweet_potato'), '迁移把「我愿意吃红薯」这句话弄丢了');
-ok(Pantry.hasStaple('rice') && Pantry.hasStaple('salt'), '迁移把不该动的也删了');
-ok(Pantry.availableGrains().indexOf('sweet_potato') >= 0, '迁移完红薯排不上了');
+ok(!Pantry.hasStaple('sweet_potato') && !Pantry.hasStaple('rice'),
+   '主食没从柜子里迁走 —— 调料柜里还会冒出「大米」「红薯」,而且永远不上清单');
+ok(Pantry.wantsGrain('sweet_potato') && Pantry.wantsGrain('rice'),
+   '迁移把「我愿意吃这个」这句话弄丢了');
+ok(Pantry.hasStaple('salt'), '迁移把调料也删了');
+ok(Pantry.totalOf('rice') === 0, '迁移给大米编了一份库存出来 —— 那个数是假的');
+ok(Pantry.availableGrains().indexOf('sweet_potato') >= 0 &&
+   Pantry.availableGrains().indexOf('rice') >= 0, '迁移完主食排不上了');
 
 // ③ 换主食要**按热量折算**,不能照抄 90g。
 //    红薯 86 kcal/100g,照抄 90g 只有 77 kcal —— 等于这顿没有主食。

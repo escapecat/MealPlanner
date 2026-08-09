@@ -874,9 +874,18 @@ var Solver = (function () {
                         fromStock: true, stockGrams: Math.round(Math.min(have, need[id])) });
       }
       if (short <= 0) return;
-      // 调料/米面是 staple 档,不进每周采购清单(DESIGN 第四节)——
-      // 但如果储物柜里压根没有,还是要提醒买
-      if (i.tier === 'staple') {
+      // 调料是 staple 档,不进每周采购清单(DESIGN 第四节)——
+      // 但如果储物柜里压根没有,还是要提醒买。
+      //
+      // ⚠️ **主食不吃这条规则**,哪怕它也是 staple 档(米/糙米/藜麦)。
+      //    以前吃这条规则,后果是:你在柜子里勾过一次「我有大米」,
+      //    大米就**永远不会再出现在采购清单上** —— 柜子没有克数、
+      //    Pantry.consume 也只动冰箱,系统于是一直认为你有,直到你自己
+      //    发现米缸空了。20 轮实测:勾了 → 上清单 0 次。
+      //    主食一律走下面那条 need − stock 的正路:一袋 5kg 买回来能顶 55 顿,
+      //    清单上照样不会天天挂着大米 —— 但那是**算出来的**,不是假设出来的。
+      if (i.tier === 'staple' && !(typeof Pantry !== 'undefined' && Pantry.isGrain
+                                   && Pantry.isGrain(id))) {
         if (typeof Pantry !== 'undefined' && Pantry.hasStaple(id)) return;
       }
       var plan = Packaging.plan(id, short);

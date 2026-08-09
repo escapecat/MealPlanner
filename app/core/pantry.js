@@ -46,34 +46,36 @@ var Pantry = (function () {
                  'white_pepper', 'corn_starch', 'cooking_wine', 'cumin', 'black_pepper',
                  'sesame_oil'];
 
-  /** 主食 —— **分两类存,因为这两类根本不是一回事。**
+  /** 主食 —— **十样一个模型:勾了就买,买了记账,做了扣。**
    *
-   * ⚠️ 以前这十样是一份清单,在调料柜里一视同仁做成勾选框。结果你会在
-   *    两个页面上看见同一样东西:后五样是 buffer 档,本来就会进采购清单、
-   *    进冰箱,可柜子里还挂着个勾。
+   * ⚠️ 分两个常量只为了**放哪儿和怎么说**,不是两套机制:
+   *      米 糙米 小米 薏米 藜麦    tier=staple  保质 360-540 天  常温放着
+   *      红薯 玉米 土豆 芋头 南瓜  tier=buffer  保质 4-30 天     冷藏
    *
-   *    根子是这两类的**存法不同**:
-   *      米 糙米 小米 薏米 藜麦    tier=staple  保质 360-540 天  买一次吃一个月
-   *      红薯 玉米 土豆 芋头 南瓜  tier=buffer  保质 4-30 天     每轮买,会烂
+   * ⚠️ 干货以前是调料柜里的一个勾,语义是「我家常备大米」——
+   *    后果是**它永远不会再出现在采购清单上**:柜子没有克数,
+   *    Pantry.consume 也只动冰箱,所以勾上那天起系统就一直认为你有米,
+   *    直到你自己发现米缸空了。20 轮实测:勾了 → 上清单 0 次。
    *
-   *    勾选框问的是「你家平时有没有这个」—— 那只对一年不坏的干货成立。
-   *    「我常备玉米」(保质 4 天)不是一句有意义的话:玉米你只能回答
-   *    「这周买了没有」,而那正是冰箱在记的事。
+   *    改成和鲜主食同一条路:**勾 = 我愿意吃它**(不是「我有」),
+   *    够不够看冰箱里的克数,不够就上清单,买了填实际克数,做了按克扣。
+   *    一袋 5kg 买回来能顶 55 顿,所以清单上也不会天天挂着大米 ——
+   *    「不该天天出现」这个目的照样达到了,而且是**算出来的**,不是假设出来的。
    *
-   *    所以:干货看柜子(勾一次,常备),鲜的看冰箱(有才算)。见 availableGrains。
-   *    这反而更贴 DESIGN 的定位 —— 冰箱里躺着一个红薯,这轮就该用它,
-   *    而不是问你常不常备红薯。
+   * ⚠️ 调料还是留在柜子里(勾 = 我有)。那儿的语义是对的:
+   *    一瓶生抽用多少你不会记,也不该让你记。
    *
    * ⚠️ 两份合起来必须和 Nutrition.STAPLE_CHOICES **一模一样**。
    *    这儿多一样 → 你有但排菜时不会用;那儿多一样 → 排出来的主食
    *    你哪儿都弄不进来。jstest/staple.js 里有一条专门盯着它们相等。
    *
-   * ⚠️ 米面杂粮以前根本不在储物柜的视野里,后果是求解器只能默认「你有白米」:
+   * ⚠️ 米面杂粮以前根本不在视野里,后果是求解器只能默认「你有白米」:
    *    80% 的顿配白米饭、34/100 轮四顿全白米。**不是求解器偏爱白米,
-   *    是它没有别的选项可选。** 一样都没有就还是白米 —— 不替你假设你有。 */
+   *    是它没有别的选项可选。** 一样都没勾就还是白米 —— 不替你假设你有。 */
   var GRAINS_DRY = ['rice', 'brown_rice', 'foxtail_millet', 'job_tears', 'quinoa'];
   var GRAINS_FRESH = ['sweet_potato', 'corn', 'potato', 'taro', 'kabocha'];
   var ALL_GRAINS = GRAINS_DRY.concat(GRAINS_FRESH);
+  function isGrain(id) { return ALL_GRAINS.indexOf(id) >= 0; }
 
   /** 开封后有效期短于这个天数才值得记开封时间 —— 盐糖问了没意义 */
   var ASK_OPENED_UNDER_DAYS = 200;
@@ -110,39 +112,41 @@ var Pantry = (function () {
       if (untouched) Store.set('staples', []);
     }
 
-    // 迁移:把鲜主食(红薯/玉米/土豆/芋头/南瓜)从柜子里挪到「主食偏好」。
+    // 迁移:**十样主食全部从柜子里挪进「主食偏好」。**
     //
-    // ⚠️ 它们本来就会走采购清单进冰箱,柜子里那个勾看着就是重复的 ——
-    //    用户原话:「为啥冰箱和调料柜都有」。
+    // ⚠️ 鲜的那五样柜子里挂个勾本来就是重复的(用户原话:「为啥冰箱和调料柜
+    //    都有」)。干货那五样看着合理,其实更糟:柜子没有克数、consume 也
+    //    只动冰箱,所以勾上那天起系统永远认为你有米,**大米再也不会上采购清单**,
+    //    直到你自己发现米缸空了。
     //
-    // ⚠️ **是挪,不是删。** 第一版我写的是直接删掉,理由是「不知道有几克,
-    //    不能编一个数进库存」—— 那个理由对,但结论错:这个勾从来就不是
-    //    「我有几克红薯」,是**「我愿意吃红薯当主食」**。那是个偏好,
-    //    删掉就是把用户说过的话扔了,而且会造成一个死循环:
-    //    不排红薯就不会买,不买冰箱里就没有,冰箱里没有就更不会排。
-    //    偏好挪进 grainPrefs,库存归冰箱,两件事各存各的。
+    // ⚠️ **是挪,不是删。** 第一版我写的是直接删,理由是「不知道有几克,
+    //    不能编一个数进库存」—— 理由对,结论错:这个勾从来就不是
+    //    「我有几克」,是**「我愿意吃它当主食」**。那是个偏好,删掉就是
+    //    把用户说过的话扔了,而且会造成死循环:不排就不会买,不买就更不会排。
+    //
+    // ⚠️ 同样**不给它编一份库存**。挪过来之后冰箱是空的,下一轮它就会
+    //    正常出现在采购清单上,你填实际克数进库存 —— 自己就理顺了。
     if (!Store.get('grainsSplitMigrated', false)) {
       Store.set('grainsSplitMigrated', true);
       var cur2 = staples();
-      var moved = cur2.filter(function (e) { return GRAINS_FRESH.indexOf(e.id) >= 0; });
+      var moved = cur2.filter(function (e) { return isGrain(e.id); });
       if (moved.length) {
         var prefs = grainPrefs().slice();
         moved.forEach(function (e) { if (prefs.indexOf(e.id) < 0) prefs.push(e.id); });
         Store.set('grainPrefs', prefs);
-        Store.set('staples', cur2.filter(function (e) {
-          return GRAINS_FRESH.indexOf(e.id) < 0;
-        }));
+        Store.set('staples', cur2.filter(function (e) { return !isGrain(e.id); }));
       }
     }
     return staples();
   }
 
-  /** 「我愿意吃哪些鲜主食」—— 偏好,不是库存。
+  /** 「我愿意吃哪些主食」—— **偏好,不是库存。**
    *
    * ⚠️ 和调料柜分开存,因为它回答的不是同一个问题。
-   *    调料柜的勾问「你家有没有」(干货买一袋吃一个月,这话成立);
-   *    这里问「愿不愿意吃」(玉米保质 4 天,「你常备玉米吗」不是一句能回答的话)。
-   *    混在一起就会在调料柜列表里冒出一条「红薯」,还带着开封提醒。 */
+   *    调料柜的勾问「你家有没有」—— 一瓶生抽用掉多少你不会记,也不该让你记。
+   *    这里问「愿不愿意吃」,有多少归冰箱按克算。
+   *    混在一起的后果分两头:鲜主食会在调料柜列表里冒出一条「红薯」还带开封提醒;
+   *    干货则是永远不上采购清单(见上面那段迁移)。 */
   function grainPrefs() { return Store.get('grainPrefs', []) || []; }
   function toggleGrainPref(id) {
     var list = grainPrefs().slice();
@@ -153,25 +157,20 @@ var Pantry = (function () {
   }
   function wantsGrain(id) { return grainPrefs().indexOf(id) >= 0; }
 
-  /** 这一轮排菜能配哪些主食。
+  /** 这一轮排菜能配哪些主食 —— **愿意吃的,加上冰箱里有的。**
    *
-   *    干货  —— 柜子里有就算(买一袋吃一个月,勾了就是常备)
-   *    鲜的  —— **愿意吃就算**,冰箱里有更算
-   *
-   * ⚠️ 「冰箱里有就算」这半条不能省。冰箱里真躺着一个红薯的时候,这轮就该
-   *    用掉它 —— 那是这个 app 的立身之本,跟你勾没勾过没关系。
-   *
-   * ⚠️ 「愿意吃就算」这半条更不能省,我漏过一次:只看冰箱的话,红薯不会被
-   *    排成主食 → 不会进采购清单 → 冰箱里永远没有 → 永远不会被排。
+   * ⚠️ 「愿意吃就算」这半条不能省,我漏过一次:只看冰箱的话,主食不会被
+   *    排上 → 不会进采购清单 → 冰箱里永远没有 → 永远不会被排。
    *    **死循环,而且是静默的**:主食悄悄退回全白米,页面上一个字都不会提。
+   *
+   * ⚠️ 「冰箱里有就算」这半条也不能省。冰箱里真躺着一个红薯的时候,这轮就该
+   *    用掉它 —— 那是这个 app 的立身之本,跟你勾没勾过没关系。
    *
    * 一样都没有 → 返回空,pickStaple 回落到白米。不替你假设你有。 */
   function availableGrains() {
-    var out = GRAINS_DRY.filter(function (id) { return hasStaple(id); });
-    GRAINS_FRESH.forEach(function (id) {
-      if (wantsGrain(id) || totalOf(id) > 0) out.push(id);
+    return ALL_GRAINS.filter(function (id) {
+      return wantsGrain(id) || totalOf(id) > 0;
     });
-    return out;
   }
 
   /** 字典里没有的调料 —— 也得能记。
@@ -455,7 +454,7 @@ var Pantry = (function () {
 
   return {
     STARTER: STARTER, GRAINS_DRY: GRAINS_DRY, GRAINS_FRESH: GRAINS_FRESH,
-    ALL_GRAINS: ALL_GRAINS, availableGrains: availableGrains,
+    ALL_GRAINS: ALL_GRAINS, isGrain: isGrain, availableGrains: availableGrains,
     grainPrefs: grainPrefs, toggleGrainPref: toggleGrainPref, wantsGrain: wantsGrain,
     staples: staples, stapleEntry: stapleEntry,
     confirmed: confirmed, setConfirmed: setConfirmed,

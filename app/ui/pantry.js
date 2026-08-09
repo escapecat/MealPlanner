@@ -551,12 +551,12 @@ var PantryUI = (function () {
     return row;
   }
 
-  /** 鲜主食那一行 —— 勾的是**愿不愿意吃**,不是「有没有」。
+  /** 主食那一行 —— 勾的是**愿不愿意吃**,不是「有没有」。
    *
-   * ⚠️ 和上面的 pickRow 长得一样,但存的地方和意思都不同,所以不合并:
-   *    pickRow 写调料柜(我家有这个),这里写 grainPrefs(我愿意吃这个)。
-   *    红薯保质 30 天、玉米 4 天 ——「你平时常备玉米吗」不是一句能回答的话,
-   *    能回答的只有「愿不愿意吃」和「这周买了没有」,后者归冰箱管。 */
+   * ⚠️ 十样都走这一行,包括大米。以前干货走 pickRow(写调料柜,语义「我家有」),
+   *    后果是勾上之后**大米永远不会再出现在采购清单上**:柜子没有克数,
+   *    consume 也只动冰箱,系统就一直认为你有米。
+   *    现在统一成「愿意吃」+ 冰箱按克记账:够就用,不够就上清单,做了就扣。 */
   function grainPrefRow(ing) {
     var want = Pantry.wantsGrain(ing.id);
     var have = Pantry.totalOf(ing.id);
@@ -568,26 +568,26 @@ var PantryUI = (function () {
     row.appendChild(h('div', { class: 'body' }, [
       h('div', { class: 'ttl' }, [ing.name]),
       h('div', { class: 'sub2' }, [
-        have > 0 ? '冰箱里有 ' + Math.round(have) + 'g —— 这轮会先用掉'
-                 : (want ? '会排上,也会出现在采购清单里' : '不排'),
+        have > 0 ? '还有 ' + Math.round(have) + 'g —— 够的话不会再上清单'
+                 : (want ? '会排上,下一轮采购清单里会有它' : '不排'),
       ]),
     ]));
     return row;
   }
 
-  /** 主食那一段的内容 —— 干货和鲜的分开,因为**买法不一样**。 */
+  /** 主食那一段 —— 十样一个规则,分组只为了说清**放哪儿**。 */
   function grainRows(w) {
     w.appendChild(h('div', { class: 'hint', style: 'margin:8px 0 4px' },
-                    ['放得住的 —— 勾了就当你家常备,不会再出现在采购清单里']));
+                    ['常温放着的 —— 一袋能吃很久,吃完了会自己回到采购清单']));
     var dry = h('div', { class: 'list' });
     Pantry.GRAINS_DRY.forEach(function (id) {
       var ing = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
-      if (ing) dry.appendChild(pickRow(ing, true));
+      if (ing) dry.appendChild(grainPrefRow(ing));
     });
     w.appendChild(dry);
 
     w.appendChild(h('div', { class: 'hint', style: 'margin:12px 0 4px' },
-                    ['放不住的 —— 勾了就每轮买一份,冰箱里有的话先用掉']));
+                    ['放不住的 —— 每轮买一份,冰箱里还有的话先用掉']));
     var fresh = h('div', { class: 'list' });
     Pantry.GRAINS_FRESH.forEach(function (id) {
       var ing = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
@@ -596,13 +596,13 @@ var PantryUI = (function () {
     w.appendChild(fresh);
   }
 
-  /** 现在会排哪些主食 —— 干货看柜子,鲜的看「愿意吃」和冰箱 */
+  /** 现在会排哪些主食 */
   function grainNames() {
     return Pantry.availableGrains().map(function (id) {
       var i = Catalog.ingredient(id);
       var n = i ? i.name : id;
-      return (Pantry.GRAINS_FRESH.indexOf(id) >= 0 && Pantry.totalOf(id) > 0)
-        ? n + '(冰箱里有)' : n;
+      var g = Pantry.totalOf(id);
+      return g > 0 ? n + ' ' + Math.round(g) + 'g' : n;
     });
   }
 

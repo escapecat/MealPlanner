@@ -486,6 +486,33 @@ var RoundsUI = (function () {
     });
   }
 
+  /** 做了这顿,**实际用掉**的东西 —— 用来从库存里扣。
+   *
+   * ⚠️ 和 mealIngredients 分开,因为它们回答的不是同一个问题:
+   *    那个答「这道菜要什么」(显示用,一道菜一张卡);
+   *    这个答「这一顿吃掉了什么」(记账用,含配菜、补的蛋白、配的那碗饭)。
+   *
+   * ⚠️ 分开之前这两件事共用一个函数,而**买的时候算六项、扣的时候只扣一项**:
+   *      买  主菜 + 配菜 + 加量 + 缩量 + 补的蛋白 + 主食   (solver 那边)
+   *      扣  主菜                                          (这边)
+   *    于是配菜的西兰花、补的那罐金枪鱼、配的那碗米,买回来进了冰箱,
+   *    做完了永远不扣 —— 库存越攒越多,而下一轮还会「优先排掉它们」,
+   *    结果是反复给你排根本已经吃掉的东西。
+   *    这类账目失衡不会报错,只会让排出来的菜越来越不对劲。 */
+  function mealConsumption(m) {
+    var out = mealIngredients(m).map(function (x) { return { id: x.id, qty: x.qty }; });
+    if (m.side) {
+      mealIngredients(m.side).forEach(function (x) {
+        out.push({ id: x.id, qty: x.qty });
+      });
+    }
+    if (m.topUp) out.push({ id: m.topUp.ingredientId, qty: m.topUp.grams });
+    // 配的那碗饭 —— 主食换过的话按换之后的算(m.staple 是求解器最后定的那样)
+    var st = m.staple || (m.nutrition && m.nutrition.staple);
+    if (st && st.ingredientId) out.push({ id: st.ingredientId, qty: st.grams });
+    return out;
+  }
+
   /** 这道菜要哪些调料(用来回答「我不想买这瓶」) */
   function mealSeasonings(m) {
     var rv = variantOf(m);
@@ -573,13 +600,21 @@ var RoundsUI = (function () {
       var g = t.actualGrams != null ? t.actualGrams : t.needGrams;
       if (!g) return;
       var i0 = Catalog.ingredient(t.ingredientId);
-      if (i0 && i0.tier === 'staple') {
+      // ⚠️ **调料进柜子,主食进冰箱** —— 两者都是 staple 档,但记法不同。
+      //    调料柜是「有/没有」:一瓶生抽用掉多少你不会记,也不该让你记。
+      //    主食按克记:一袋 5kg 的米要能吃 55 顿,做一顿扣一顿,吃完了
+      //    自己会回到采购清单上。以前米也往柜子里塞,于是勾上就再没提醒过。
+      //
+      // ⚠️ 米放常温,不是冷藏 —— addFromPackage 按 tier 猜位置,
+      //    staple 档会被猜成 fridge,一袋米挂着「冷藏」是假的。
+      if (i0 && i0.tier === 'staple' && !Pantry.isGrain(t.ingredientId)) {
         if (!Pantry.hasStaple(t.ingredientId)) Pantry.toggleStaple(t.ingredientId);
         return;
       }
+      var loc = (i0 && i0.tier === 'staple') ? 'pantry' : null;
       var it = Pantry.addFromPackage(
         { id: t.ingredientId, ingredientId: t.ingredientId, netWeight: g, unit: t.unit },
-        now);
+        now, loc);
       var list = Pantry.items();
       list[list.length - 1].source = tag;
       Store.set('pantryItems', list);
@@ -1527,10 +1562,12 @@ var RoundsUI = (function () {
     m.cooked = !m.cooked;
     m.cookedAt = m.cooked ? new Date().toISOString() : null;
     saveRounds(rs);
-    // 做了就从库存里扣 —— 这是库存模块存在的理由,不扣的话下一轮会重复买
+    // 做了就从库存里扣 —— 这是库存模块存在的理由,不扣的话下一轮会重复买。
+    // ⚠️ 走 mealConsumption 不是 mealIngredients:配菜、补的蛋白、配的那碗饭
+    //    也是这一顿真吃掉的东西。见 mealConsumption 上面那段。
     if (m.cooked) {
       var now = new Date().toISOString();
-      mealIngredients(m).forEach(function (x) {
+      mealConsumption(m).forEach(function (x) {
         if (x.qty) Pantry.consume(x.id, x.qty, now);
       });
     }
