@@ -42,6 +42,6 @@ docs/
 
 ## 参考项目
 
-`C:\Users\weideng\MahjongScorer2` —— 同一个人写的国标麻将算番器。
+`MahjongScorer2` —— 同一个人写的国标麻将算番器(本地项目,没公开)。
 本项目大量复用它的工程模式(纯函数聚合层、称号系统、图鉴页、导出备份、录入优化)。
 具体清单见 `DESIGN.md` 的「从 MahjongScorer2 复用什么」。
