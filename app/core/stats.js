@@ -75,31 +75,58 @@ var Stats = (function () {
 
   /**
    * 什么东西总是剩下 —— 直接对着「买回来烂掉」。
-   * ⚠️ 只认 wasteLog(你亲手点「扔了」的),不拿「买了多少减用了多少」估 ——
+   * ⚠️ 只认 wasteLog(你亲手点的),不拿「买了多少减用了多少」估 ——
    *    那个差额里混着「还在冰箱里好好放着」,当成浪费就是冤枉人。
+   *
+   * ⚠️ 同一份日志里现在有三种 kind,**只有 waste 算浪费**:
+   *      eaten   吃掉了   → 只进分母
+   *      waste   扔了     → 分子 + 分母
+   *      mistake 记错了   → **两头都不进**(那条记录本来就不该存在,
+   *                         不是「买了没吃」,是「压根没买」)
+   *    老数据没有 kind:那时候这份日志只记浪费,一律按 waste 算。
    */
   function wasted() {
-    var log = Store.get('wasteLog', []) || [];
+    var all = Store.get('wasteLog', []) || [];
+    function isWaste(w) { return !w.kind || w.kind === 'waste'; }
+    var thrown = all.filter(isWaste);
+    var eaten = all.filter(function (w) { return w.kind === 'eaten'; });
     var NEED = 5;
-    if (log.length < NEED) {
-      return { id: 'wasted', ready: false, need: NEED, have: log.length,
+    if (thrown.length < NEED) {
+      return { id: 'wasted', ready: false, need: NEED, have: thrown.length,
                title: '什么东西总是剩' };
     }
     var by = {};
-    log.forEach(function (w) {
+    thrown.forEach(function (w) {
       var k = w.ingredientId || w.name;
-      (by[k] = by[k] || { id: k, name: w.name || k, grams: 0, times: 0 });
+      // ⚠️ 名字兜底要走字典,不能只信日志里那个字段:老版本的 logWaste
+      //    **根本没记 name**,只有 ingredientId —— 于是这儿会印出
+      //    「spinach 3 次」,英文 id 直接漏到界面上(和「scratch:太辣」同一类)。
+      var nm = w.name;
+      if (!nm && typeof Catalog !== 'undefined' && Catalog.ingredient) {
+        var i = Catalog.ingredient(k);
+        if (i) nm = i.name;
+      }
+      (by[k] = by[k] || { id: k, name: nm || k, grams: 0, times: 0 });
+      if (nm) by[k].name = nm;
       by[k].grams += w.grams || 0;
       by[k].times++;
     });
     var top = Object.keys(by).map(function (k) { return by[k]; })
       .sort(function (a, b) { return b.times - a.times || b.grams - a.grams; })
       .slice(0, 3);
-    var o = { id: 'wasted', ready: true, title: '什么东西总是剩',
-              detail: top.map(function (x) {
-                return x.name + ' ' + x.times + ' 次' +
-                       (x.grams ? '(共 ' + Math.round(x.grams) + 'g)' : '');
-              }).join(' · ') };
+    var detail = top.map(function (x) {
+      return x.name + ' ' + x.times + ' 次' +
+             (x.grams ? '(共 ' + Math.round(x.grams) + 'g)' : '');
+    }).join(' · ');
+    // ⚠️ 有「吃完了」垫底才给得出浪费率。**没有分母的比例是编的** ——
+    //    只数扔掉的次数永远算不出「扔了多少」,只能算出「扔过几回」。
+    function sum(a) { return a.reduce(function (s, w) { return s + (w.grams || 0); }, 0); }
+    var eatenG = sum(eaten), wasteG = sum(thrown);
+    if (eatenG > 0) {
+      detail += ' · 记下来的里面 ' +
+                Math.round(wasteG / (eatenG + wasteG) * 100) + '% 是扔掉的';
+    }
+    var o = { id: 'wasted', ready: true, title: '什么东西总是剩', detail: detail };
     if (top[0] && top[0].times >= 3) {
       o.action = '「' + top[0].name + '」反复扔 —— 加进忌口,或者在采购清单上把它的规格改小。';
       o.level = 'warn';

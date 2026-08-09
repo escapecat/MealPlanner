@@ -46,10 +46,34 @@ var PantryUI = (function () {
     return '';
   }
 
-  /** 记一笔浪费 —— 这是诊断统计唯一的真实数据源 */
-  function logWaste(it, grams) {
+  /** 一样东西从冰箱里消失,记一笔 —— **诊断统计唯一的真实数据源。**
+   *
+   * ⚠️ kind 有三种,而且**必须分得开**:
+   *      eaten    吃掉了     —— 记录存在过、也兑现了
+   *      waste    扔了       —— 记录存在过、没兑现  ← 只有这一种算浪费
+   *      mistake  记错了     —— 这条记录**本来就不该存在**
+   *
+   *    分不开的后果不是「统计不精细」,是**分母错**:
+   *    浪费率 = 扔掉 /(吃掉 + 扔掉)。mistake 两头都不该进 ——
+   *    它不是「买了没吃」,是「压根没买」。
+   *
+   * ⚠️ 这三个动作以前在界面上是三个选项,可代码里「吃完了」和「记错了」
+   *    走的是**同一行** `removeItem(id)`,只是后者多问一句确认。
+   *    两个按钮做同一件事,比一个按钮更糟:你得先纠结选哪个,
+   *    纠结完发现选哪个都行,下次就不信这个界面了。
+   *    (调料那儿的「我有」/「买了」踩过一模一样的坑。)
+   *
+   * ⚠️ 必须记 name。老版本只存 ingredientId,而 stats 那边是 `w.name || k` ——
+   *    于是「什么东西总是剩」会印出 **spinach 3 次**,英文 id 直接漏到界面上。
+   *    (「scratch:太辣」是同一类。)
+   *
+   * 存储键仍叫 wasteLog:store.js 的导入校验和 stats 都认这个名字,
+   * 老数据没有 kind,一律按 waste 算 —— 那时候它确实只记浪费。 */
+  function logRemoval(it, kind, grams) {
     var log = Store.get('wasteLog', []) || [];
-    log.push({ at: now(), ingredientId: it.ingredientId, grams: grams,
+    var ing = Catalog.ingredient(it.ingredientId);
+    log.push({ at: now(), kind: kind, ingredientId: it.ingredientId,
+               name: ing ? ing.name : it.ingredientId, grams: grams,
                addedAt: it.addedAt, expiresAt: it.expiresAt });
     Store.set('wasteLog', log);
   }
@@ -99,9 +123,9 @@ var PantryUI = (function () {
       });
     }
 
-    // ⚠️ 「扔了」写进 wasteLog,那是诊断统计唯一的真实数据源。
-    //    所以必须另给一个「记错了」—— 否则用户拿「扔了」当通用删除键,
-    //    系统就会以为他真扔了食物,「什么东西总是剩」的结论跟着变成垃圾。
+    // ⚠️ 「扔了」是**唯一算浪费**的那一个,所以必须另给「记错了」——
+    //    否则用户拿「扔了」当通用删除键,系统就会以为他真扔了食物,
+    //    「什么东西总是剩」的结论跟着变成垃圾。
     function askWaste() {
       Modal.ask({
         title: '扔了多少 ' + name + '?',
@@ -116,7 +140,7 @@ var PantryUI = (function () {
         if (v == null) return;
         var n = parseFloat(v);
         if (isNaN(n) || n <= 0) return;
-        logWaste(it, Math.min(n, it.amount));
+        logRemoval(it, 'waste', Math.min(n, it.amount));
         if (n >= it.amount) removeItem(it.id);
         else setAmount(it.id, it.amount - n);
         render();
@@ -158,20 +182,29 @@ var PantryUI = (function () {
           //    连带 wasteLog 一条都写不进去。modal.js 现在兜住了这个词,
           //    但别再写错 —— 一个仓库里两种叫法,迟早还会错第二次。
           options: [
-            { key: 'eaten', label: '吃完了', hint: '从冰箱去掉,不算浪费' },
-            { key: 'waste', label: '扔了',   hint: '记一笔浪费 —— 统计只认这里的数' },
-            { key: 'wrong', label: '记错了', hint: '当没记过,不影响浪费统计',
-              danger: true },
+            { key: 'eaten', label: '吃完了',
+              hint: '算进「买回来的有多少真吃掉了」' },
+            { key: 'waste', label: '扔了',
+              hint: '唯一算浪费的那个 —— 统计只认这里的数' },
+            { key: 'wrong', label: '记错了,其实没有',
+              hint: '当没记过 —— 吃掉和扔掉两边都不算', danger: true },
           ],
         }).then(function (v) {
-          if (v === 'eaten') { removeItem(it.id); render(); }
-          else if (v === 'waste') askWaste();
+          if (v === 'eaten') {
+            logRemoval(it, 'eaten', it.amount);
+            removeItem(it.id); render();
+          } else if (v === 'waste') askWaste();
           else if (v === 'wrong') {
             Modal.confirm({
               title: '直接删掉这条?',
-              body: '不算浪费、也不算吃掉 —— 就当没记过。浪费统计不会受影响。',
+              body: '当这条记录没存在过 —— 不算吃掉,也不算扔掉。' +
+                    '浪费率的分子分母都不会动。',
               ok: '删掉', danger: true,
-            }).then(function (ok) { if (ok) { removeItem(it.id); render(); } });
+            }).then(function (ok) {
+              if (!ok) return;
+              logRemoval(it, 'mistake', it.amount);
+              removeItem(it.id); render();
+            });
           }
         });
       },

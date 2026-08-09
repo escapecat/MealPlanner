@@ -24,6 +24,9 @@ global.Store = {
   get: function (k, f) { return db[k] !== undefined ? db[k] : (f === undefined ? null : f); },
   set: function (k, v) { db[k] = v; },
 };
+// ⚠️ Catalog 必须加载 —— 老日志里只有 ingredientId,名字要靠它兜底。
+//    不加载的话「英文 id 漏到界面上」那条测的就是别的东西了。
+global.Catalog = require(path.join(APP, 'core/catalog.js'));
 var Stats = require(path.join(APP, 'core/stats.js'));
 
 var fail = 0;
@@ -70,19 +73,55 @@ var allCooked = m4.map(function (m) { return { recipeId: m.recipeId, name: m.nam
 db = { rounds: [mkRound('r1', allCooked), mkRound('r2', allCooked)], wasteLog: [] };
 ok(!byId('completion').action, '全做完了还在给建议 —— 没事找事说的话,有事说的时候你就不看了');
 
-// ---- 4. 浪费:只认亲手点的「扔了」 ----
+// ---- 4. 浪费:三种「没了」必须分得开 ----
+//
+// ⚠️ 「吃完了 / 扔了 / 记错了」在界面上是三个选项,可代码里前后两个
+//    走的是**同一行** removeItem —— 两个按钮做同一件事,比一个按钮更糟。
+//    分开之后每一种都有确定的去处,而**分错的后果是分母错**:
+//      eaten   吃掉了   → 只进分母
+//      waste   扔了     → 分子 + 分母
+//      mistake 记错了   → 两头都不进(不是「买了没吃」,是「压根没买」)
 db = { rounds: [], wasteLog: [] };
-ok(!byId('wasted').ready, '一条浪费记录都没有就开始报「什么总是剩」');
+ok(!byId('wasted').ready, '一条记录都没有就开始报「什么总是剩」');
 db.wasteLog = [
-  { ingredientId: 'spinach', name: '菠菜', grams: 100 },
-  { ingredientId: 'spinach', name: '菠菜', grams: 80 },
-  { ingredientId: 'spinach', name: '菠菜', grams: 120 },
-  { ingredientId: 'onion', name: '洋葱', grams: 50 },
-  { ingredientId: 'onion', name: '洋葱', grams: 30 },
+  { ingredientId: 'spinach', name: '菠菜', grams: 100, kind: 'waste' },
+  { ingredientId: 'spinach', name: '菠菜', grams: 80,  kind: 'waste' },
+  { ingredientId: 'spinach', name: '菠菜', grams: 120, kind: 'waste' },
+  { ingredientId: 'onion', name: '洋葱', grams: 50, kind: 'waste' },
+  { ingredientId: 'onion', name: '洋葱', grams: 30, kind: 'waste' },
 ];
 var w = byId('wasted');
 ok(w.ready && /菠菜/.test(w.detail), '没认出反复扔的是菠菜:' + w.detail);
 ok(!!w.action, '菠菜扔了三次却没给动作');
+
+// 「吃完了」不许被当成浪费 —— 否则你越用越像个败家子
+db.wasteLog = db.wasteLog.concat([
+  { ingredientId: 'chicken_breast', name: '鸡胸肉', grams: 500, kind: 'eaten' },
+]);
+var w2 = byId('wasted');
+ok(!/鸡胸肉/.test(w2.detail), '「吃完了」被算成浪费了:' + w2.detail);
+// 有了分母才给得出浪费率。380/880 = 43%
+ok(/43%/.test(w2.detail), '有「吃完了」垫底却没给出浪费率:' + w2.detail);
+
+// 「记错了」两头都不进 —— 加一条 mistake,比例一个点都不许动
+db.wasteLog = db.wasteLog.concat([
+  { ingredientId: 'tofu', name: '豆腐', grams: 400, kind: 'mistake' },
+]);
+ok(byId('wasted').detail === w2.detail,
+   '「记错了」影响了浪费率 —— 那条记录本来就不该存在,不是「买了没吃」');
+
+// ⚠️ 老数据没有 kind:那时候这份日志只记浪费,一律按 waste 算。
+//    而且**老版本根本没存 name**,只有 ingredientId —— 名字得走字典兜底,
+//    否则界面上会印出「spinach 3 次」(和「scratch:太辣」同一类)。
+db = { rounds: [], wasteLog: [
+  { ingredientId: 'spinach', grams: 100 }, { ingredientId: 'spinach', grams: 80 },
+  { ingredientId: 'spinach', grams: 60 },  { ingredientId: 'onion', grams: 50 },
+  { ingredientId: 'onion', grams: 30 },
+] };
+var w3 = byId('wasted');
+ok(w3.ready, '老数据(没有 kind)被当成不是浪费,整条洞察哑了');
+ok(!/spinach/.test(w3.detail || '') && /菠菜/.test(w3.detail || ''),
+   '英文 id 漏到界面上了:' + w3.detail);
 
 // ---- 5. 份量:**不许建议调高总热量** ----
 // 这条是这个文件里最要紧的一条。减脂目标下「不够吃」是常态,
