@@ -221,6 +221,16 @@ var RoundsUI = (function () {
 
   // ---------------- 生成 ----------------
 
+  /** 字符串 → 一个稳定的正整数。够用就行,不是密码学。 */
+  function hashStr(str) {
+    var h = 2166136261;
+    for (var i = 0; i < String(str).length; i++) {
+      h ^= String(str).charCodeAt(i);
+      h = (h * 16777619) >>> 0;
+    }
+    return h % 100000;
+  }
+
   function generate(r, silent) {
     var cfg = config();
     var cons = Round.effectiveConstraints(r, cfg);
@@ -242,10 +252,26 @@ var RoundsUI = (function () {
     var daily = Profile.dailyTargets(Object.assign({}, p, { weightKg: kg }));
     var target = daily ? Profile.perPlannedMeal(daily, p.breakfast) : null;
 
+    // ⚠️ **必须传 seed,而且每次要不一样。**
+    //    求解器的默认种子是 `servings * 7919` —— 一个常数。而这里以前
+    //    根本没传过 seed,于是整个求解是**完全确定性**的:
+    //    配置不变、冰箱不变,连点五次「重新生成」给你的是同一份菜,
+    //    下一周开新一轮排出来的也还是那四道。
+    //
+    // ⚠️ 我那 100 轮模拟一直在传 `seed: s`,**所以一直没发现** ——
+    //    测的是一个线上不存在的用法。和 boot.js 的键少了命名空间前缀
+    //    是同一类错:测试跑的路径和真实路径不是一条。
+    //
+    // 种子 = 轮次 id 的哈希 + 重排次数:
+    //    不同轮次 → 不同起点(下周不会又是这四道)
+    //    同一轮点「重新生成」→ 计数器 +1,真的换一批
+    r.solveCount = (r.solveCount || 0) + 1;
+
     var out = Solver.solve({
       servings: r.input.servings || r.input.meals,
       constraints: cons, stock: stock, mustUse: mustUse,
       target: target,
+      seed: hashStr(r.id) + r.solveCount,
       stockDetail: Pantry.stockSummary(nowIso),   // 带紧迫度,放久的会被优先排掉
       // 冷却期 + 这一轮被「换掉」的菜。换掉了还排出来,那个按钮就等于没用。
       recentRecipeIds: Object.assign(recentIds(), excludedMap(r)),
@@ -262,6 +288,10 @@ var RoundsUI = (function () {
     }
     var rs = rounds();
     var i = rs.findIndex(function (x) { return x.id === r.id; });
+    // ⚠️ 计数器必须写回存储。`r` 多半是从 rounds() 读出来的**另一个对象**,
+    //    只改它的话下次进来还是 undefined → 计数器永远是 1 →
+    //    「重新生成」又变回给同一份菜,等于这个修复没生效。
+    rs[i].solveCount = r.solveCount;
     rs[i].solved = {
       at: new Date().toISOString(),
       // 需求克数是主的(菜谱算得出),包装规格只是提示(没人核实过)。

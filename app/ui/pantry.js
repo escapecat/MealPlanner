@@ -346,8 +346,19 @@ var PantryUI = (function () {
     return iso ? iso.slice(5, 7) + '/' + iso.slice(8, 10) : null;
   }
 
-  /** 一行小字讲清楚:什么时候买的、开没开封、还能放多久 */
-  function ageText(entry) {
+  /** 一行小字讲清楚:什么时候买的、开没开封、还能放多久
+   *
+   * ⚠️ **只有「开封后会变质」的东西才提开封。**
+   *    改版前每一行都写「未开封」—— 包括食盐和白砂糖。可这两样
+   *    `openedShelfLifeDays` 是空的(它们根本不会坏),所以**不会**出现
+   *    「开封了」按钮 —— 于是那行字说了一个你**永远改不了**的状态,
+   *    看起来像按钮坏了或者漏了,其实是故意不问。
+   *
+   *    判据和按钮用的是同一个:worthTrackingOpened(≤200 天才值得记)。
+   *    盐 · 糖 → 没有开封保质期      蜂蜜 · 料酒 → 360 天,超过门槛
+   *    生抽 · 老抽 · 白胡椒粉 → 180 天    食用油 → 90 天
+   *    两边必须用同一个判据,不然又是「按钮和文字各说各的」。 */
+  function ageText(entry, ing) {
     var n = now();
     if (entry.openedAt) {
       var d = Pantry.openedDaysLeft(entry, n);
@@ -361,9 +372,11 @@ var PantryUI = (function () {
     if (entry.addedAt) {
       var u = Pantry.unopenedDaysLeft(entry, n);
       var since = Math.round((Date.parse(n) - Date.parse(entry.addedAt)) / 864e5);
+      var track = Pantry.worthTrackingOpened(ing);
       return {
         text: fmtDate(entry.addedAt) + ' 买 · ' +
-              (since <= 0 ? '今天' : since + ' 天前') + ' · 未开封' +
+              (since <= 0 ? '今天' : since + ' 天前') +
+              (track ? ' · 未开封' : '') +
               (u != null && u < 90 ? ' · 保质期剩 ' + u + ' 天' : ''),
         level: (u != null && u < 0) ? 'bad' : (u != null && u < 30 ? 'warn' : 'ok'),
       };
@@ -376,7 +389,7 @@ var PantryUI = (function () {
     var entry = Pantry.stapleEntry(ing.id);
     if (!entry) return h('span', {});
     var track = Pantry.worthTrackingOpened(ing);
-    var a = ageText(entry);
+    var a = ageText(entry, ing);
     var color = { bad: 'var(--danger)', warn: 'var(--warn)', dim: 'var(--text-dim)' }[a.level]
                 || 'var(--text-dim)';
 

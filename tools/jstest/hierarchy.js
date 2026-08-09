@@ -201,6 +201,33 @@ if (row) {
   ok(deep(node3).length > t3.length, '点开一条历史之后内容没变多 —— 展不开等于看不了');
 }
 
+// ---- 「重新生成」得真的换一批 ----
+//
+// ⚠️ 真出过,而且藏了很久:Solver 的默认种子是 `servings * 7919`(一个常数),
+//    而 rounds.js **从来没传过 seed** —— 于是整个求解是完全确定性的:
+//    配置不变、冰箱不变,连点五次「重新生成」给你的是同一份菜,
+//    下一周开新一轮排出来的也还是那四道。
+//
+// ⚠️ 为什么一直没发现:**100 轮模拟一直在传 `seed: s`** ——
+//    测的是一个线上不存在的用法。和 boot.js 的键少了命名空间前缀是同一类错:
+//    **测试跑的路径和真实路径不是同一条。**
+//    所以这条必须**照 UI 的方式**调(走 RoundsUI,不直接调 Solver)。
+vm.runInContext('Store.set("rounds", [])', ctx);
+var node4 = new El('div');
+ctx.RoundsUI.mount(node4);
+click(node4, /这次要做饭/);
+click(node4, /记下这一次/);
+var seenPlans = {};
+for (var g = 0; g < 5; g++) {
+  click(node4, /生成采购清单|重新生成/);
+  var rs4 = vm.runInContext('JSON.parse(JSON.stringify(Store.get("rounds",[])))', ctx);
+  var got = ((rs4[0] || {}).solved || {}).meals || [];
+  seenPlans[got.map(function (m) { return m.name; }).join('|')] = 1;
+}
+ok(Object.keys(seenPlans).length >= 4,
+   '连点 5 次「重新生成」只得到 ' + Object.keys(seenPlans).length +
+   ' 种结果 —— seed 多半又没传下去(默认是常数)');
+
 console.log(fail ? '按钮层级 ' + fail + ' 处不对'
-                 : '  按钮层级 ok(四个状态各一个主按钮 · 结束不是死胡同 · 12 轮不涨页)');
+                 : '  流程/层级 ok(四状态各一主按钮 · 结束不死胡同 · 12 轮不涨页 · 重排真换菜)');
 process.exit(fail ? 1 : 0);
