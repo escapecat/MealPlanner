@@ -195,6 +195,7 @@ var PantryUI = (function () {
       //
       // ⚠️ 而且那句解释原来被拆成两个 div,第一个以逗号结尾 ——
       //    渲染出来在逗号处硬换行。一句话就该是一个块。
+      w.className = 'wrap wrap-fill';
       w.appendChild(h('div', { class: 'empty' }, [
         h('div', { class: 'big' }, ['🧊']),
         h('div', { style: 'font-weight:600' }, ['冰箱是空的']),
@@ -717,6 +718,7 @@ var PantryUI = (function () {
     }
 
     if (!mine.length) {
+      w.className = 'wrap wrap-fill';
       w.appendChild(h('div', { class: 'empty' }, [
         h('div', { class: 'big' }, ['🧂']),
         h('div', {}, ['柜子是空的 —— 上面搜一下加进来']),

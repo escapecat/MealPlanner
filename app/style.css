@@ -355,24 +355,24 @@ input:focus, select:focus {
 .tabbar button[aria-current="page"] { color: var(--accent); font-weight: 600; }
 .tabbar .ic { display: block; font-size: 19px; line-height: 1.35; }
 
-/* ⚠️ **空状态要把剩下的空间占满并居中。**
-   内容本来就少(一个图标 + 一两行字),顶在最上面的话下面留一大片空白,
-   看着像页面没加载完 —— 真机上加到主屏之后尤其明显。
-   ⚠️ 不能给 .empty 定固定 min-height:它上面通常还有个 h1,
-   固定值算不进那一块,底下就差多少露多少。让父容器参与布局才行。 */
-.wrap:has(> .empty) {
-  min-height: calc(100svh - 64px - env(safe-area-inset-bottom) - env(safe-area-inset-top));
+/* ⚠️ 空状态要把 tab 栏以上占满，内容在其中居中。
+   ⚠️ **不用 :has()** —— 那要靠猜浏览器支不支持，而我没法在真机上验证。
+      改成由 JS 显式加 .wrap-fill：哪个页面是空状态，渲染它的代码最清楚。
+   ⚠️ 高度要减掉 body 已经付过的那几笔(tab 栏 64px + 上下安全区)，
+      否则重复扣减，内容区反而比可视区还矮，底下照样空一截。 */
+.wrap-fill {
+  min-height: calc(100svh - 64px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   display: flex; flex-direction: column;
 }
-.wrap:has(> .empty) > .empty { flex: 1; justify-content: center; }
-.empty {
-  text-align: center; color: var(--text-dim); padding: var(--s5) var(--s4);
-  display: flex; flex-direction: column; align-items: center;
+@supports not (height: 100svh) {
+  .wrap-fill { min-height: calc(100vh - 64px); }
 }
-/* :has 不支持时(Safari 15.4 以前)退回固定高度 —— 偏一点好过完全不居中 */
-@supports not selector(:has(> *)) {
-  .empty { min-height: calc(100vh - 260px); justify-content: center; }
+.wrap-fill > .empty {
+  flex: 1;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
 }
+.empty { text-align: center; color: var(--text-dim); padding: var(--s5) var(--s4); }
 .empty .big { font-size: var(--t-xl); margin-bottom: var(--s2); opacity: .7; }
 
 /* ---- 列表 ----

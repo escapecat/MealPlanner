@@ -1391,6 +1391,7 @@ var RoundsUI = (function () {
       // ⚠️ 原来是「空状态 + 一张解释卡」两块,而且解释卡里 47 个字讲的是
       //    「这个功能怎么用」。空屏上堆两个框、写一段说明书,不如一句话
       //    加一个按钮 —— 按钮就在上面,点了自然知道要填什么。
+      w.className = 'wrap wrap-fill';
       w.appendChild(h('div', { class: 'empty' }, [
         h('div', { class: 'big' }, ['🍚']),
         h('div', { style: 'font-weight:600' }, ['还没排过']),
