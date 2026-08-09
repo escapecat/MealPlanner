@@ -1126,28 +1126,26 @@ var RoundsUI = (function () {
       });
     }
 
-    var acts = h('div', { style: 'display:flex;gap:8px;margin-top:12px;flex-wrap:wrap' });
+    var acts = h('div', { class: 'btn-row', style: 'margin-top:12px' });
 
     // ⚠️ 库里**没有做法步骤**,只有上面那一行备注。
     //    DESIGN 的定位是「食材流转管理器,不是菜谱推荐器」,不自己写 512 道菜的步骤
     //    是对的 —— 我写也是编的。但不写不等于不给出口,以前连出口都没有。
     acts.appendChild(h('a', {
-      class: 'btn ghost',
-      style: 'width:auto;padding:4px 12px;font-size:13px;text-decoration:none;' +
-             'display:inline-block;text-align:center',
+      class: 'btn ghost sm', style: 'text-decoration:none',
       href: 'https://www.xiachufang.com/search/?keyword=' + encodeURIComponent(m.name),
       target: '_blank', rel: 'noopener',
     }, ['搜做法 ↗']));
 
     if (!cooking) {
       acts.appendChild(h('button', {
-        class: 'btn ghost', style: 'width:auto;padding:4px 12px;font-size:13px',
+        class: 'btn ghost sm',
         onclick: function () { swapDish(r, m); },
       }, ['换掉这道']));
     } else {
       acts.appendChild(h('button', {
-        class: 'btn ghost', style: 'width:auto;padding:4px 12px;font-size:13px' +
-               (m.cooked ? '' : ';border-color:var(--accent);color:var(--accent)'),
+        class: 'btn ghost sm',
+        style: m.cooked ? '' : 'border-color:var(--accent);color:var(--accent)',
         onclick: function () { toggleCooked(r, m.recipeId); },
       }, [m.cooked ? '↩ 没做' : '做了']));
     }

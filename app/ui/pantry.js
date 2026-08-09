@@ -392,14 +392,19 @@ var PantryUI = (function () {
       ]),
       h('div', { style: 'font-size:12px;color:' + color }, [a.text]),
     ]));
+    // ⚠️ 行内次操作用 .act,不是 .btn 加一串覆盖。
+    //    .btn 是主按钮:display:flex 的块级元素、min-height 48。
+    //    拿它当小按钮使,得写 width:auto + padding + font-size + flex 四条覆盖,
+    //    而 width:auto **盖不住块级换行** —— 菜谱页那两个按钮就是这么
+    //    上下堆起来的,还各顶着 48px 高配 13px 的字。
     if (track && !entry.openedAt) {
       row.appendChild(h('button', {
-        class: 'btn ghost', style: 'width:auto;padding:4px 8px;font-size:12px;flex:0 0 auto',
+        class: 'act',
         onclick: function () { Pantry.setOpened(ing.id, now()); render(); },
       }, ['开封了']));
     }
     row.appendChild(h('button', {
-      class: 'btn ghost', style: 'width:auto;padding:4px 8px;font-size:12px;flex:0 0 auto',
+      class: 'act',
       onclick: function () { editStaple(ing, entry); },
     }, ['···']));
     return row;

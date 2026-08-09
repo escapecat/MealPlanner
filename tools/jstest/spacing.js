@@ -125,6 +125,43 @@ if (hard.length) {
   }
 });
 
+// ---- 6. 不许拿主按钮 .btn 当小按钮使 ----
+//
+// ⚠️ 真出过,而且是肉眼可见的排版塌掉:
+//    「搜做法 ↗」和「按我的情况改」原来是 `class: 'btn ghost'` 加五条内联覆盖
+//    (width:auto / padding / font-size / display:inline-block / margin-left)。
+//    .btn 是 `display:flex` 的**块级**元素 —— `width:auto` **盖不住块级换行**,
+//    于是两个按钮上下堆着、中间空一道,而且各自顶着 .btn 的 min-height:48px
+//    配 13px 的字,看着像没写完。
+//
+// 该用什么:
+//    并排的两个主要动作  → .btn-row 包 .btn.sm
+//    行内的次要动作      → .act
+// 判据就一条:**给 .btn 写 width:auto,一定是用错了组件。**
+var misuse = [];
+var NL = String.fromCharCode(10);
+files.forEach(function (rel) {
+  var src = fs.readFileSync(path.join(APP, rel), 'utf8');
+  src.split(NL).forEach(function (line, i) {
+    if (!/class:\s*'btn[^']*'/.test(line)) return;
+    if (/width:\s*auto/.test(line)) {
+      misuse.push(rel + ':' + (i + 1) + '  ' + line.trim().slice(0, 60));
+    }
+  });
+  // 跨行写法也得抓:class 和 style 分两行的情况
+  var joined = src.replace(new RegExp(NL + '\\s*', 'g'), ' ');
+  var m3, RE = /class:\s*'btn[^']*'[^;]{0,120}?width:\s*auto/g;
+  while ((m3 = RE.exec(joined)) !== null) {
+    if (!misuse.some(function (x) { return x.indexOf(rel) === 0; })) {
+      misuse.push(rel + '(跨行)  ' + m3[0].slice(0, 60));
+    }
+  }
+});
+if (misuse.length) {
+  bad('拿 .btn 当小按钮使(' + misuse.length + ' 处)—— 并排用 .btn-row + .btn.sm,' +
+      '行内用 .act:' + NL + '         ' + misuse.slice(0, 5).join(NL + '         '));
+}
+
 console.log(fail ? '间距/令牌 ' + fail + ' 处不对'
                  : '  间距/令牌 ok(内联间距 ' + steps.length + ' 档:' + steps.join('/') + 'px)');
 process.exit(fail ? 1 : 0);

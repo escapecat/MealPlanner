@@ -89,7 +89,12 @@ var RecipesUI = (function () {
             || v.prepLevel) + (ok ? '' : ' · 当前设置下做不了'),
         ]));
       }
-      box.appendChild(h('div', { class: 'hint' }, [attrLine(r, v)]));
+      // ⚠️ 只有一个档位时不再重复这一行 —— 折叠行的副标题里已经写过一模一样的
+      //    「炒 · 20 分能吃上 · 动手 20 分 · 难度 3」。多档位时才有意义:
+      //    那时候每一档的时间难度都不同,是在做对比。
+      if (r.variants.length > 1) {
+        box.appendChild(h('div', { class: 'hint' }, [attrLine(r, v)]));
+      }
 
       if (v.aheadOfTime && v.aheadOfTime !== '—') {
         box.appendChild(h('div', { class: 'hint', style: 'color:var(--warn)' },
@@ -138,8 +143,12 @@ var RecipesUI = (function () {
                                   ? v.equipmentRequired : null);
       (chk.subs || []).forEach(function (sub) {
         if (!sub.note) return;
+        // ⚠️ 不要再前缀「用 X 顶:」—— equipment.js 里每条 note **本身就是
+        //    完整句子、自带主语**(「炒锅能顶,但煎鱼煎蛋容易粘」
+        //    「汤锅炒不了,但煮炖焖没问题」)。加前缀的结果是:
+        //    「用 **炒锅** 顶:炒锅能顶,但煎鱼煎蛋容易粘」—— 主语说了两遍。
         box.appendChild(h('div', { class: 'note', style: 'margin-top:8px' }, [
-          '你没有这个,用 **' + sub.via + '** 顶:' + sub.note,
+          '没有 ' + (chk.missing || []).join('/') + '?' + sub.note,
         ]));
       });
     });
@@ -151,19 +160,25 @@ var RecipesUI = (function () {
       ' · 数据未核实',
     ]));
 
-    box.appendChild(h('a', {
-      class: 'btn ghost',
-      style: 'width:auto;padding:4px 12px;font-size:13px;text-decoration:none;' +
-             'display:inline-block;margin-top:8px',
+    // ⚠️ 这两个按钮原来是**拿主按钮 .btn 加五条内联覆盖**拼出来的
+    //    (width:auto / padding / font-size / display:inline-block / margin-left)。
+    //    .btn 是 `display:flex` 的块级元素,`width:auto` 盖不住块级换行 ——
+    //    于是「搜做法」和「按我的情况改」上下堆着,中间还空一道,
+    //    而且各自顶着 .btn 的 min-height:48px,配 13px 的字看着更怪。
+    //
+    //    .btn-row + .btn.sm.ghost 就是干这个的(style.css 里早就有),
+    //    两个等宽并排,高度 44,一条内联样式都不用写。
+    var acts2 = h('div', { class: 'btn-row', style: 'margin-top:12px' });
+    acts2.appendChild(h('a', {
+      class: 'btn ghost sm', style: 'text-decoration:none',
       href: 'https://www.xiachufang.com/search/?keyword=' + encodeURIComponent(r.name),
       target: '_blank', rel: 'noopener',
     }, ['搜做法 ↗']));
-
-    box.appendChild(h('button', {
-      class: 'btn ghost',
-      style: 'width:auto;padding:4px 12px;font-size:13px;margin-top:8px;margin-left:8px',
+    acts2.appendChild(h('button', {
+      class: 'btn ghost sm',
       onclick: function () { editRecipe(r); },
     }, [RecipeBook.hasOverride(r.id) ? '改过了 · 再改' : '按我的情况改']));
+    box.appendChild(acts2);
 
     if (RecipeBook.hasOverride(r.id)) {
       var orig = RecipeBook.original(r.id);
