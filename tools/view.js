@@ -192,7 +192,7 @@ if (page === 'rounds') {
   clickByText(/生成采购清单/);
   // 第二个参数 = 走到哪个阶段:shop(默认,待采购)| cook(已开做)
   var stage = process.argv[3] || '';
-  if (stage === 'cook' || stage === 'done') clickByText(/买齐了|开始做饭/);
+  if (stage === 'cook' || stage === 'done' || stage === 'rate') clickByText(/买齐了|开始做饭/);
   if (stage === 'done') {
     // 把每道菜都点「做了」,再结束这一轮 —— 看看走到底是什么样
     for (var q = 0; q < 6; q++) clickByText(/^做了$/);
@@ -200,6 +200,11 @@ if (page === 'rounds') {
     // 反正要看的是「结束之后长什么样」
     vm.runInContext('(function(){var rs=Store.get("rounds",[]);rs[0].status="done";' +
                     'rs[0].finishedAt=new Date().toISOString();Store.set("rounds",rs);})()', ctx);
+  }
+  if (stage === 'rate') {
+    // 点几道「做了」,再点「结束这一轮」→ 反馈那一屏
+    for (var q2 = 0; q2 < 6; q2++) clickByText(/^做了$/);
+    clickByText(/结束这一轮|全做完了/);
   }
   if (stage === 'hist') {
     // 结束之后,把那条历史点开 —— 看看里面是回执还是工作台

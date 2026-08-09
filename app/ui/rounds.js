@@ -11,6 +11,7 @@ var RoundsUI = (function () {
   var secState = {};
   // 展开的是哪一顿(做菜那屏一次只摊开一顿)。null = 自动挑「下一顿要做的」
   var openMeal = null;
+  var rating = false;      // 在填反馈那一屏
   // 翻开的是哪一条历史轮次(一次只翻一条)
   var openPast = null;
 
@@ -944,6 +945,97 @@ var RoundsUI = (function () {
    *    页面上唯一能点的是「重新生成」和「删除」,于是看起来像「做完了?那就删了吧」。
    *    状态机里有 UI 到不了的状态,等于流程断在最关键的地方。
    */
+  /**
+   * 反馈 —— **这是唯一一次问得出来的时机**,过了这顿就想不起来了。
+   *
+   * ⚠️ FEATURES 第 24 条:**30 秒内填完**。填反馈一旦变成作业你就不填,
+   *    数据没了,整条学习链断掉。所以:一顿一行、行内点、不弹层、可全跳过。
+   *
+   * ⚠️ 只问**观测不到的**三件:
+   *      好不好吃    —— app 永远猜不到
+   *      够不够吃    —— 只调**构成**不调总量(FEATURES 第 19 条:
+   *                     饭量不能靠反馈学,减脂目标下会一路漂移)
+   *      时间估得准不准
+   *
+   * ⚠️ 关于耗时:FEATURES 写的是「点开始 / 点做完,自动记」——
+   *    **只做了一半**:cookedAt 只有做完的时刻,没有开始,所以耗时
+   *    **根本算不出来**。而真让你满手油在灶台前点两次也不现实。
+   *    改成问「比估计的快还是慢」:一下点完,而且这才是能用的信号 ——
+   *    要改的是**我的估计**,不是记录你的绝对分钟数。
+   *
+   * 别的都不问:做没做成有 cooked、扔了多少库存里记了。
+   * **能自动观测的绝不问用户。**
+   *
+   * ⚠️ 不评分也能结束。逼着填就是把它变成作业,那正是第 24 条要防的。
+   */
+  function ratingSheet(r, setStatus) {
+    var box = h('div', {});
+    var meals = (r.solved.meals || []).filter(function (m) { return m.cooked; });
+    var log = r.log || {};
+    var ratings = log.ratings || (log.ratings = {});
+
+    box.appendChild(h('div', { style: 'font-weight:600;margin-bottom:4px' },
+                      ['做完了 —— 顺手记两笔?']));
+    box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:12px' },
+      ['下次排菜会照着这个来。不想填就直接点最下面结束。']));
+
+    function seg(m, cur, field, opts) {
+      var g = h('div', { class: 'chips', style: 'margin-top:8px' });
+      opts.forEach(function (o) {
+        g.appendChild(h('button', {
+          type: 'button', 'aria-pressed': String(cur[field] === o[0]),
+          onclick: function () {
+            cur[field] = cur[field] === o[0] ? null : o[0];
+            ratings[m.recipeId] = cur;
+            saveLog(r, log);
+            render();
+          },
+        }, [o[1]]));
+      });
+      return g;
+    }
+
+    var list = h('div', { class: 'list' });
+    meals.forEach(function (m) {
+      var cur = ratings[m.recipeId] || {};
+      var row = h('div', { class: 'list-row', style: 'flex-wrap:wrap' });
+      row.appendChild(h('div', { class: 'body', style: 'flex:1 0 100%' }, [
+        h('div', { class: 'ttl' }, [m.name]),
+      ]));
+      // 三档就够 —— 五星在手机上点不准,而且你也分不出 3 星和 4 星
+      row.appendChild(seg(m, cur, 'like',
+        [['good', '好吃'], ['ok', '一般'], ['bad', '不想再做']]));
+      row.appendChild(seg(m, cur, 'fill',
+        [['less', '吃不完'], ['just', '正好'], ['more', '不够']]));
+      row.appendChild(seg(m, cur, 'time',
+        [['fast', '比说的快'], ['same', '差不多'], ['slow', '比说的久']]));
+      list.appendChild(row);
+    });
+    box.appendChild(list);
+
+    var n = Object.keys(ratings).length;
+    box.appendChild(h('button', {
+      class: 'btn', style: 'margin-top:16px',
+      onclick: function () {
+        log.cookedCount = meals.length;
+        saveLog(r, log);
+        rating = false;
+        setStatus('done');
+      },
+    }, [n ? '记下来,结束这一轮' : '跳过,结束这一轮']));
+    return box;
+  }
+
+  /** 反馈随手就存,不等你点结束 —— 填到一半切走也不该白填 */
+  function saveLog(r, log) {
+    var rs = rounds();
+    var i = rs.findIndex(function (x) { return x.id === r.id; });
+    if (i < 0) return;
+    rs[i].log = log;
+    r.log = log;
+    saveRounds(rs);
+  }
+
   function nextStep(r) {
     var box = h('div', { style: 'margin-top:16px' });
     var s = r.solved;
@@ -972,17 +1064,20 @@ var RoundsUI = (function () {
         '做完一道点一下「做了」—— 用掉的食材会自动从冰箱扣掉。' +
         (cooked ? '  已经做了 ' + cooked + '/' + meals.length + '。' : ''),
       ]));
+      if (rating) { box.appendChild(ratingSheet(r, setStatus)); return box; }
       box.appendChild(h('button', {
         class: 'btn', onclick: function () {
-          var skipped = meals.length - cooked;
-          Modal.confirm({
-            title: '这一轮就到这儿?',
-            body: cooked === meals.length
-              ? '排的 ' + meals.length + ' 顿全做了。'
-              : '排了 ' + meals.length + ' 顿,做了 ' + cooked + ' 顿,还有 ' + skipped +
-                ' 顿没做。\n\n没做的会如实记下来 —— 连着两轮做不完,下次会自动少排几天。',
-            ok: '结束这一轮',
-          }).then(function (ok) { if (ok) setStatus('done'); });
+          if (!cooked) {
+            // 一顿都没做,没什么可评的
+            Modal.confirm({
+              title: '这一轮就到这儿?',
+              body: '排了 ' + meals.length + ' 顿,一顿都没做。会如实记下来 —— ' +
+                    '连着两轮做不完,下次自动少排几天。',
+              ok: '结束这一轮',
+            }).then(function (ok) { if (ok) setStatus('done'); });
+            return;
+          }
+          rating = true; render();
         },
       }, [cooked === meals.length && meals.length ? '全做完了,结束这一轮' : '结束这一轮']));
     } else if (r.status === 'done') {
