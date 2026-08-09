@@ -40,6 +40,23 @@ ok(get(target.id).variants[0].activeMinutes === origActive + 20,
 ok(RecipeBook.original(target.id).variants[0].activeMinutes === origActive,
    '库里的原值没被改掉（' + origActive + ' 分），随时能对照');
 
+// --- ★ 校准必须**原地改数组**,不能重新赋值 ---
+//
+// ⚠️ init() 原来写的是 `window.RECIPES = merged` / `RECIPES = merged` ——
+//    浏览器里换掉全局没问题,可小程序是 CommonJS:别的模块 require 到的是
+//    **模块缓存里那个原数组对象**,重新赋值只改 recipebook 自己的绑定,
+//    于是校准只在那一个文件里生效 —— 正好变成「菜谱页显示改过的、
+//    求解器用的还是原来的」,而那是这个文件开头写着要防的头号问题。
+//
+// ⚠️ 上面那两条**抓不到它**:它们读的是全局 RECIPES,而 `RECIPES = merged`
+//    在 node 的非严格模式下正好也写到 global 上,照样绿。
+//    这一条握着 require 拿回来的**那个原数组对象**,只有原地改才看得见。
+var MODULE_REF = require(path.join(A, 'data', 'recipes.js'));
+ok(MODULE_REF.filter(function (r) { return r.id === target.id; })[0]
+     .variants[0].activeMinutes === origActive + 20,
+   '★ 校准没落到 require 拿到的那个数组上 —— 换成 CommonJS(小程序)之后,' +
+   '别的模块看到的还是校准前的值,而且一个错都不报');
+
 // --- 改了之后筛选也得跟着变，不能只有显示变 ---
 var cfg = { equipment: ['炒锅', '汤锅', '不粘锅', '烤箱', '蒸锅', '空气炸锅'],
             maxActiveMinutes: origActive + 10, maxDifficulty: 5, blacklist: [] };

@@ -107,12 +107,28 @@ var RecipeBook = (function () {
   }
 
   /**
-   * 把校准应用到全局 RECIPES 上。
+   * 把校准应用到 RECIPES 上。
    *
-   * ⚠️ 直接换掉全局数组,而不是让每个调用点改走 RecipeBook.get() ——
+   * ⚠️ 直接改这个数组,而不是让每个调用点改走 RecipeBook.get() ——
    *    RECIPES 在 core 和 ui 里有几十处引用,逐个改的风险远大于收益,
    *    而且漏一处就是「菜谱页显示改过的、求解器用的还是原来的」这种
-   *    最难查的不一致。换全局的话,不存在漏网的调用点。
+   *    最难查的不一致。改数组本身的话,不存在漏网的调用点。
+   *
+   * ⚠️ **必须原地换内容,不能重新赋值。** 原来写的是
+   *      if (typeof window !== 'undefined') window.RECIPES = merged;
+   *      else RECIPES = merged;
+   *    —— 浏览器里它换掉全局,所有引用都看得见,没问题;
+   *    可小程序用的是 CommonJS,别的模块 require 到的是**模块缓存里的
+   *    那个原数组对象**,重新赋值只改 recipebook 自己的绑定,
+   *    于是校准就只在这个文件里生效 —— **正好变成上面那段注释说它要防的事**,
+   *    而且一个错都不报。
+   *
+   *    `length = 0` + `push.apply` 换的是数组**内容**,持有引用的人全都看得见,
+   *    浏览器和 require 两个世界里都成立。
+   *
+   *    (老测试抓不到这个:它们往 `global.RECIPES` 上塞数据,而 `RECIPES = merged`
+   *     在 node 的非严格模式下正好也写到 global 上,于是照样绿。
+   *     jstest/recipebook.js 里补了一条走 require 路径的。)
    */
   function init() {
     if (!BASE) BASE = JSON.parse(JSON.stringify(RECIPES));
@@ -125,9 +141,9 @@ var RecipeBook = (function () {
         return (v.ingredients || []).length > 0;
       });
     });
-    if (typeof window !== 'undefined') window.RECIPES = merged;
-    else RECIPES = merged;
-    return merged;
+    RECIPES.length = 0;
+    Array.prototype.push.apply(RECIPES, merged);
+    return RECIPES;
   }
 
   function save(recipeId, patch, prepLevel) {
