@@ -11,7 +11,10 @@ var RoundsUI = (function () {
   var secState = {};
   // 展开的是哪一顿(做菜那屏一次只摊开一顿)。null = 自动挑「下一顿要做的」
   var openMeal = null;
-  var rating = false;      // 在填反馈那一屏
+  // 正在填反馈的那一轮 id。非 null 时**整页只剩反馈**(见 render 开头)
+  var rating = null;
+  // 刚点完「做了」—— 渲染完把下一顿滚进视野(见 render 结尾)
+  var jumpToOpen = false;
   // 翻开的是哪一条历史轮次(一次只翻一条)
   var openPast = null;
 
@@ -967,17 +970,30 @@ var RoundsUI = (function () {
    * **能自动观测的绝不问用户。**
    *
    * ⚠️ 不评分也能结束。逼着填就是把它变成作业,那正是第 24 条要防的。
+   *
+   * ⚠️ **这是单独一屏,不是接在做菜那页屁股后面的一段。**
+   *    第一版就是后者:点「结束这一轮」之后,反馈长在整页最底下 ——
+   *    上面还压着采购清单、四张菜卡、一堆提示,你得先划过一整页才看得见它,
+   *    而且划的过程中全是**已经不需要再看的东西**。
+   *    「结束这一轮」是一次明确的状态切换,那就该换一屏:
+   *    进来只有要填的三件事和一个出口,填完就出去。
    */
-  function ratingSheet(r, setStatus) {
-    var box = h('div', {});
+  function ratingScreen(r) {
+    var w = h('div', { class: 'wrap' });
     var meals = (r.solved.meals || []).filter(function (m) { return m.cooked; });
     var log = r.log || {};
     var ratings = log.ratings || (log.ratings = {});
 
-    box.appendChild(h('div', { style: 'font-weight:600;margin-bottom:4px' },
-                      ['做完了 —— 顺手记两笔?']));
-    box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:12px' },
-      ['下次排菜会照着这个来。不想填就直接点最下面结束。']));
+    w.appendChild(h('h1', {}, ['做完了 —— 顺手记两笔?']));
+    w.appendChild(h('p', { class: 'sub' },
+      ['这一轮做了 ' + meals.length + ' 顿。下次排菜会照着这个来,不想填就直接结束。']));
+
+    // ⚠️ 单独一屏就必须有**不改状态的退路**。误点了「结束这一轮」之后,
+    //    如果唯一的出口是「结束」,那这一屏就是个陷阱。
+    w.appendChild(h('button', {
+      class: 'link', style: 'margin-bottom:12px',
+      onclick: function () { rating = null; render(); },
+    }, ['← 还没做完,回去']));
 
     function seg(m, cur, field, opts) {
       var g = h('div', { class: 'chips', style: 'margin-top:8px' });
@@ -1011,19 +1027,19 @@ var RoundsUI = (function () {
         [['fast', '比说的快'], ['same', '差不多'], ['slow', '比说的久']]));
       list.appendChild(row);
     });
-    box.appendChild(list);
+    w.appendChild(list);
 
     var n = Object.keys(ratings).length;
-    box.appendChild(h('button', {
+    w.appendChild(h('button', {
       class: 'btn', style: 'margin-top:16px',
       onclick: function () {
         log.cookedCount = meals.length;
         saveLog(r, log);
-        rating = false;
-        setStatus('done');
+        rating = null;
+        setStatus(r, 'done');
       },
     }, [n ? '记下来,结束这一轮' : '跳过,结束这一轮']));
-    return box;
+    return w;
   }
 
   /** 反馈随手就存,不等你点结束 —— 填到一半切走也不该白填 */
@@ -1036,17 +1052,21 @@ var RoundsUI = (function () {
     saveRounds(rs);
   }
 
+  // ⚠️ 以前这个函数长在 nextStep 里面(闭包着 r),于是反馈那一屏
+  //    只能把它当参数传进去。反馈现在是整页接管的一屏,离 nextStep 更远了 ——
+  //    状态切换是全页共用的动作,提到外面来。
+  function setStatus(r, st) {
+    var rs = rounds();
+    var k = rs.findIndex(function (x) { return x.id === r.id; });
+    if (k < 0) return;
+    rs[k].status = st;
+    if (st === 'done') rs[k].finishedAt = new Date().toISOString();
+    saveRounds(rs); render();
+  }
+
   function nextStep(r) {
     var box = h('div', { style: 'margin-top:16px' });
     var s = r.solved;
-
-    function setStatus(st) {
-      var rs = rounds();
-      var k = rs.findIndex(function (x) { return x.id === r.id; });
-      rs[k].status = st;
-      if (st === 'done') rs[k].finishedAt = new Date().toISOString();
-      saveRounds(rs); render();
-    }
 
     if (r.status === 'shopping') {
       var left = (s.shopping || []).filter(function (x) { return !x.bought; }).length;
@@ -1055,16 +1075,16 @@ var RoundsUI = (function () {
              : '都买齐了 —— 可以开做了。',
       ]));
       box.appendChild(h('button', {
-        class: 'btn', onclick: function () { setStatus('cooking'); },
+        class: 'btn', onclick: function () { setStatus(r, 'cooking'); },
       }, [left ? '买齐了,开始做饭(还有 ' + left + ' 样没勾)' : '开始做饭']));
     } else if (r.status === 'cooking') {
       var meals = s.meals || [];
       var cooked = meals.filter(function (x) { return x.cooked; }).length;
       box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
-        '做完一道点一下「做了」—— 用掉的食材会自动从冰箱扣掉。' +
+        '做完一道点一下「做了」—— 用掉的食材会自动从冰箱扣掉,' +
+        '下一顿自动摊开。' +
         (cooked ? '  已经做了 ' + cooked + '/' + meals.length + '。' : ''),
       ]));
-      if (rating) { box.appendChild(ratingSheet(r, setStatus)); return box; }
       box.appendChild(h('button', {
         class: 'btn', onclick: function () {
           if (!cooked) {
@@ -1074,10 +1094,10 @@ var RoundsUI = (function () {
               body: '排了 ' + meals.length + ' 顿,一顿都没做。会如实记下来 —— ' +
                     '连着两轮做不完,下次自动少排几天。',
               ok: '结束这一轮',
-            }).then(function (ok) { if (ok) setStatus('done'); });
+            }).then(function (ok) { if (ok) setStatus(r, 'done'); });
             return;
           }
-          rating = true; render();
+          rating = r.id; render();
         },
       }, [cooked === meals.length && meals.length ? '全做完了,结束这一轮' : '结束这一轮']));
     } else if (r.status === 'done') {
@@ -1123,7 +1143,10 @@ var RoundsUI = (function () {
     var key = m.recipeId + '#' + i;
     var open = openMeal === null ? autoOpen : openMeal === key;
 
-    var card = h('div', { class: 'card', style: 'padding:12px 12px;margin-bottom:8px' +
+    var card = h('div', { class: 'card',
+                          // 自动翻页之后要把它滚进视野 —— 见 render 结尾
+                          id: (open && r.status === 'cooking') ? 'open-meal' : null,
+                          style: 'padding:12px 12px;margin-bottom:8px' +
                                                 (m.cooked ? ';opacity:.55' : '') });
 
     var head = h('div', {
@@ -1496,6 +1519,14 @@ var RoundsUI = (function () {
         if (x.qty) Pantry.consume(x.id, x.qty, now);
       });
     }
+    // ⚠️ **点完「做了」自动翻到下一顿。**
+    //    以前点完就停在原地:刚做完的那张卡还摊着(整份配料、备注、
+    //    「搜做法」全在),下一顿还收着一行,你得先手动收起这张、
+    //    再手动点开那张 —— 而这三下点击之间**没有任何一步是你想做的决定**,
+    //    你已经明确说了「这道做完了」,下一步是什么根本没有歧义。
+    //    openMeal 置回 null 就交还给自动规则(「第一顿还没做的」),
+    //    全做完了就全收起来 —— 那时该看的是底下那个「结束这一轮」。
+    if (m.cooked) { openMeal = null; jumpToOpen = true; }
     render();
   }
 
@@ -1565,6 +1596,16 @@ var RoundsUI = (function () {
     el.innerHTML = '';
     var w = h('div', { class: 'wrap' });
     var rs = rounds();
+
+    // ⚠️ **反馈整页接管** —— 不是接在做菜那页底下的一段。
+    //    「结束这一轮」是一次状态切换,切换就该换屏:进来只有要填的三件事
+    //    和一个出口。留在原页的话,反馈上面永远压着一整页已经不需要看的东西。
+    //    轮次没了(比如另一处删掉了)就自己退出去,不留死屏。
+    if (rating) {
+      var rr = rs.filter(function (x) { return x.id === rating && x.solved; })[0];
+      if (rr) { el.appendChild(ratingScreen(rr)); return; }
+      rating = null;
+    }
 
     // ⚠️ 标题原来叫「做饭记录」—— 按**数据结构**起的名,不是按你打开它的目的。
     //    你开这个 app 是想知道「这周吃什么、要买什么」,不是来「记录做饭」的。
@@ -1655,6 +1696,19 @@ var RoundsUI = (function () {
 
     el.appendChild(w);
     if (sheetOpen) renderSheet();
+
+    // ⚠️ 自动翻到下一顿之后**必须把它滚进视野**,否则「翻」了等于没翻:
+    //    刚做完那张卡从整屏塌成一行,页面上半截凭空缩掉十几屏高度,
+    //    你原地不动就被甩到了下一顿的**下面**,还得往回划找。
+    //    只在点过「做了」之后滚 —— 平时重渲染(勾一样菜、改个克数)乱滚
+    //    比不滚更烦人。
+    if (jumpToOpen) {
+      jumpToOpen = false;
+      var tgt = document.getElementById('open-meal');
+      if (tgt && typeof tgt.scrollIntoView === 'function') {
+        tgt.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
   }
 
   function mount(node, opts) {
