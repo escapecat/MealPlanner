@@ -55,8 +55,12 @@ var Pantry = (function () {
    *
    *    勾了糙米/小米/红薯,它就会在这几样之间轮换(Nutrition.pickStaple)。
    *    没勾就还是白米 —— 不替你假设你有。 */
-  var STARTER_GRAINS = ['rice', 'brown_rice', 'foxtail_millet', 'job_tears',
-                        'quinoa', 'sweet_potato'];
+  // ⚠️ 必须和 Nutrition.STAPLE_CHOICES **一模一样**。
+  //    这儿多一样 → 你勾了但排菜时不会用;那儿多一样 → 排出来的主食
+  //    你在柜子里根本勾不上。两份清单各写各的是迟早出事的写法,
+  //    jstest/staple.js 里有一条专门盯着它们相等。
+  var STARTER_GRAINS = ['rice', 'brown_rice', 'foxtail_millet', 'job_tears', 'quinoa',
+                        'sweet_potato', 'corn', 'potato', 'taro', 'kabocha'];
 
   /** 开封后有效期短于这个天数才值得记开封时间 —— 盐糖问了没意义 */
   var ASK_OPENED_UNDER_DAYS = 200;

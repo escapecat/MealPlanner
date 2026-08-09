@@ -11,6 +11,7 @@
 
 var PantryUI = (function () {
 
+  var grainOpen = null;   // 主食那段展开没有。null = 按「勾过没有」自动决定
   var el, tab = 'fridge', q = '', adding = false, addDraft = null,
       ingQ = '', composing = false;   // composing:中文输入法正在组字,这期间不能重渲染
 
@@ -495,18 +496,17 @@ var PantryUI = (function () {
       else Pantry.toggleStaple(ing.id);
       render();
     };
-    var row = h('div', {
-      style: 'display:flex;gap:12px;align-items:center;padding:8px 0;cursor:pointer;' +
-             'border-bottom:1px solid var(--border)',
-      onclick: hit,
-    });
-    row.appendChild(h('span', {
-      style: 'font-size:18px;flex:0 0 auto;line-height:1',
-    }, [has ? '☑' : '☐']));
+    // ⚠️ 用 .list-row + .ck,不自己画 ——
+    //    原来这行自带 `border-bottom` 和 ☐ / ☑ 两个字符:
+    //    放进 .list 里就是**双线**(容器已经给了分隔线),
+    //    而且 ☐ 是个**字形**,行高和字号一变就和右边的文字对不齐。
+    //    .ck 是画出来的方框,垂直居中由 flex 保证。
+    var row = h('div', { class: 'list-row' + (has ? ' on' : ''), onclick: hit });
+    row.appendChild(h('span', { class: 'ck' }, ['✓']));
     var al = q ? Search.matchedAlias(ing, q) : null;
-    row.appendChild(h('div', { style: 'flex:1' + (has ? '' : ';color:var(--text-dim)') }, [
-      h('div', {}, [ing.name + (al ? '(' + al + ')' : '')]),
-      h('div', { class: 'hint' }, [
+    row.appendChild(h('div', { class: 'body' }, [
+      h('div', { class: 'ttl' }, [ing.name + (al ? '(' + al + ')' : '')]),
+      h('div', { class: 'sub2' }, [
         (ing.packaging || '规格未填') + (ing.inevitableSurplus ? ' · 单人多半吃不完' : ''),
       ]),
     ]));
@@ -585,18 +585,38 @@ var PantryUI = (function () {
     //    去那儿找糙米。**功能藏在一个只出现一次的地方,等于没有。**
     if (!q) {
       var owned = Pantry.STARTER_GRAINS.filter(function (id) { return Pantry.hasStaple(id); });
-      w.appendChild(h('div', { class: 'between', style: 'margin:16px 0 8px' }, [
-        h('div', { style: 'font-weight:600' }, ['主食']),
-        h('div', { class: 'xs dim' },
-          [owned.length > 1 ? '排菜时在这 ' + owned.length + ' 样里换着来'
-                            : '只勾一样就顿顿吃它']),
-      ]));
-      var gl = h('div', { class: 'list', style: 'margin-bottom:16px' });
-      Pantry.STARTER_GRAINS.forEach(function (id) {
-        var ing = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
-        if (ing) gl.appendChild(pickRow(ing, true));
+      var ownedNames = owned.map(function (id) {
+        var i = Catalog.ingredient(id); return i ? i.name : id;
       });
-      w.appendChild(gl);
+      // ⚠️ 10 样常驻太占地方,而这东西**设一次基本不动**。
+      //    默认:还没勾过 → 展开(不然你根本不知道有这回事);
+      //          勾过了   → 收起,标题右边直接列出勾了哪几样。
+      //    收起的那行本身就把答案说完了,不用点开确认。
+      var gOpen = grainOpen === null ? owned.length === 0 : grainOpen;
+      w.appendChild(h('div', {
+        class: 'list-row' + (gOpen ? ' sticky' : ''),
+        style: 'border:1px solid var(--border);border-radius:var(--r-md);' +
+               'margin:16px 0 8px;background:var(--surface)',
+        onclick: function () { grainOpen = !gOpen; render(); },
+      }, [
+        h('div', { class: 'body' }, [
+          h('div', { class: 'ttl' }, ['主食']),
+          h('div', { class: 'sub2' }, [
+            !owned.length ? '一样都没勾 —— 排菜时默认配白米饭'
+              : ownedNames.join(' · ') +
+                (owned.length > 1 ? '(换着来)' : '(顿顿吃它)'),
+          ]),
+        ]),
+        h('span', { class: 'dim' }, [gOpen ? '▴' : '▸']),
+      ]));
+      if (gOpen) {
+        var gl = h('div', { class: 'list', style: 'margin-bottom:16px' });
+        Pantry.STARTER_GRAINS.forEach(function (id) {
+          var ing = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
+          if (ing) gl.appendChild(pickRow(ing, true));
+        });
+        w.appendChild(gl);
+      }
     }
 
     w.appendChild(h('div', { class: 'row' }, [

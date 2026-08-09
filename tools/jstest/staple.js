@@ -48,6 +48,22 @@ function run(staples) {
   return { kinds: kinds, allSame: allSame, rounds: rounds };
 }
 
+// ⓪ 两份清单必须一模一样。
+//    Pantry.STARTER_GRAINS 是**你能勾的**,Nutrition.STAPLE_CHOICES 是**排菜会用的**。
+//    这儿多一样 → 勾了不生效;那儿多一样 → 排出来的东西你勾不上。
+//    各写各的是迟早出事的写法。
+var a1 = Pantry.STARTER_GRAINS.slice().sort().join(',');
+var a2 = Nutrition.STAPLE_CHOICES.slice().sort().join(',');
+ok(a1 === a2, '能勾的主食和排菜会用的对不上 —— 柜子[' + a1 + '] 排菜[' + a2 + ']');
+
+// ⓪b 主食不能同时算蔬菜 —— 否则同一样东西两头计,蔬菜达标率凭空虚高。
+//     南瓜(26 kcal)和莲藕的 countsAsVeg 就是 true,所以主食用的是贝贝南瓜。
+var vegAlso = Nutrition.STAPLE_CHOICES.filter(function (id) {
+  var i = Catalog.ingredient(id);
+  return i && i.countsAsVeg;
+});
+ok(vegAlso.length === 0, '这些主食同时算蔬菜,会两头计:' + vegAlso.join(' '));
+
 // ① 什么都没勾 → 还是白米。**不替用户假设他有糙米。**
 //    「替用户假设他有什么」是这个项目开箱即勾 11 样调料时犯过的错。
 var a = run(null);

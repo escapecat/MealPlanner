@@ -373,8 +373,16 @@ input:focus, select:focus {
 .list-row .body { flex: 1; min-width: 0; }
 .list-row .ttl  { font-weight: 550; }
 .list-row .sub2 { font-size: var(--t-xs); color: var(--text-dim); margin-top: 1px; }
+/* 「买到了 / 做完了」—— 划掉、淡出,让路给还没做的 */
 .list-row.done  { opacity: .45; }
 .list-row.done .ttl { text-decoration: line-through; }
+
+/* ⚠️ 「我有这样东西」**不能用 .done**。
+   .done 是「划掉」的语义(半透明 + 删除线),而「柜子里有盐」是个
+   **正面状态** —— 划掉它等于说「这条完事了,别看了」,正好反过来:
+   有的那些才是你要一眼看到的,没有的才该退让。 */
+.list-row.on .ttl { font-weight: 600; }
+.list-row:not(.on) .ttl { color: var(--text-dim); }
 
 /* 勾选框:视觉上是个框,但**整行**才是点击区 ——
    改版前只有 18px 的 ☐ 能点,手机上按不准(储物柜那次已经踩过一模一样的坑)。 */
@@ -382,8 +390,8 @@ input:focus, select:focus {
       border: 1.5px solid var(--border-2); display: flex; align-items: center;
       justify-content: center; font-size: 14px; color: transparent;
       transition: background .12s var(--ease), border-color .12s var(--ease); }
-.list-row.done .ck { background: var(--accent); border-color: var(--accent);
-                     color: var(--on-accent); }
+.list-row.done .ck, .list-row.on .ck { background: var(--accent);
+                     border-color: var(--accent); color: var(--on-accent); }
 
 /* 行尾的小动作(改规格之类)。⚠️ 不用 .btn ——
    一行一个实心按钮,8 行就是 8 个按钮在跟主操作(勾掉)抢注意力。 */
