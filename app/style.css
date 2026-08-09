@@ -167,12 +167,31 @@ body {
      宽度退回按内容算。表现是整个页面突然变窄（有多少字占多宽）。 */
   width: 100%;
   /* flex:1 0 auto 让它至少撑满 .page —— 底色是连续的一整块。
-     ⚠️ 不再往里传 flex（不再有 .fill-rest），所以不设 display:flex。 */
+     display:flex 是为了把高度继续传给最后那块列表。 */
   flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
 }
-/* ⚠️ 这里**曾经有 .fill-rest**，用来把最后一块列表拉长、填掉底部空白。
-   撤掉了 —— 它把一部分页面的按钮推到了屏幕最底下，而那种排布
-   比原来那点空白更难看。底部露出的背景已经和卡片同色。 */
+/* 最后一块列表铺到底 —— 消掉它和 tab 栏之间那道「到此为止」的界线。
+ *
+ *  ⚠️ **只在它真的是 .wrap 的最后一个孩子时**才铺（用 :last-child）。
+ *     早先的版本会跳过按钮往前找，结果把按钮推到屏幕最底下 ——
+ *     「内容在上、按钮孤零零沉在底」比那点空白更难看。
+ *
+ *  ⚠️ 铺到底之后底部圆角和下边框都要去掉:那条线正是「下巴」的上沿。 */
+.wrap > .list:last-child,
+.wrap > .card:last-child {
+  flex: 1 0 auto;
+  margin-bottom: calc(var(--s4) * -1);
+  border-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.wrap > .list:last-child > :last-child,
+.wrap > .card:last-child > :last-child {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
 
 
 h1 { font-size: var(--t-lg); font-weight: 650; margin: var(--s1) 0 var(--s1);
