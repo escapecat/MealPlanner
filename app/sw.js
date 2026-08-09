@@ -17,7 +17,15 @@
 //    **不用版本号。** 靠人手动 bump 版本的方案,漏一次就是「永远停在旧版」,
 //    而那种故障没有任何提示。
 
-var CACHE = 'mealplanner';
+// ⚠️ **清理缓存的时候只能清自己的。**
+//    CacheStorage 是**按 origin 共享的**,不看 scope。
+//    escapecat.github.io 上还装着别的 PWA(Balance),
+//    原来这里写的是「删掉所有不叫 mealplanner 的缓存」——
+//    于是这个 SW 一激活就把人家的缓存全清了,
+//    表现是「另一个 app 突然离线打不开了」,而你根本想不到是这边干的。
+
+var PREFIX = 'mealplanner';
+var CACHE = PREFIX;
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();          // 新的装好就顶上,不用等所有标签页关掉
@@ -27,7 +35,8 @@ self.addEventListener('activate', function (e) {
   e.waitUntil(
     caches.keys().then(function (names) {
       return Promise.all(names.map(function (n) {
-        return n === CACHE ? null : caches.delete(n);
+        // 只清自己的旧版本 —— 别人的一个都不许碰
+        return (n.indexOf(PREFIX) === 0 && n !== CACHE) ? caches.delete(n) : null;
       }));
     }).then(function () { return self.clients.claim(); })
   );
