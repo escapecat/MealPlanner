@@ -155,26 +155,25 @@ body {
 
 /* ⚠️ **这条 flex 链条不涉及任何数值** —— 高度靠 flex 一层层传下来。
      `flex: 1 0 auto` 而不是 `1`:内容比容器长时不许被压缩。 */
+/* ⚠️ **一处定义，别分两条写。** 属性虽然会合并，
+   但下一次有人只改其中一条，另一条还在，排查起来要命。 */
 .wrap {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--s4);
+  /* ⚠️ **width:100% 不能少。**
+     `margin: 0 auto` 在普通块级布局下是居中，但 .wrap 现在是 flex item ——
+     CSS 规范里 flex item 在交叉轴上有 auto margin 时，stretch 会被禁用，
+     宽度退回按内容算。表现是整个页面突然变窄（有多少字占多宽）。 */
+  width: 100%;
+  /* flex:1 0 auto 让它至少撑满 .page —— 底色是连续的一整块。
+     ⚠️ 不再往里传 flex（不再有 .fill-rest），所以不设 display:flex。 */
   flex: 1 0 auto;
-  display: flex;
-  flex-direction: column;
 }
-/* 链条最后一环:内容里最后一块容器吃掉剩余空间（app.js 渲染完盖上）。 */
-.fill-rest { flex: 1 0 auto; }
-/* ⚠️ 只有**真的排在最后**时才抵消 .wrap 的下内边距。
-   后面还跟着按钮的话，负边距会把按钮往上顶进列表里。 */
-.fill-rest:last-child {
-  margin-bottom: calc(var(--s4) * -1);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-}
-.fill-rest:last-child > :last-child {
-  border-bottom-left-radius: 0 !important;
-  border-bottom-right-radius: 0 !important;
-}
+/* ⚠️ 这里**曾经有 .fill-rest**，用来把最后一块列表拉长、填掉底部空白。
+   撤掉了 —— 它把一部分页面的按钮推到了屏幕最底下，而那种排布
+   比原来那点空白更难看。底部露出的背景已经和卡片同色。 */
 
-.wrap { max-width: 560px; margin: 0 auto; padding: var(--s4); }
 
 h1 { font-size: var(--t-lg); font-weight: 650; margin: var(--s1) 0 var(--s1);
      letter-spacing: -.01em; }
