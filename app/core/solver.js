@@ -493,11 +493,14 @@ var Solver = (function () {
       // ⚠️ `Nutrition.ofMeal(v, stapleId)` 一直支持传主食,可**从来没人传过** ——
       //    于是 80% 的顿自动配的都是白米饭,34/100 轮是四顿全白米。
       //    又一处「写了没接上」。
-      // ⚠️ 只在你勾过的里面挑。一样没勾就还是白米,不替你假设你有糙米 ——
+      // ⚠️ 只在你**真有**的里面挑。一样都没有就还是白米,不替你假设你有糙米 ——
       //    「替用户假设他有什么」是这个项目开箱即勾 11 样调料时犯过的错。
+      // ⚠️ 「真有」现在得分两头问:干货主食看调料柜(常备),鲜主食看冰箱(有才算)。
+      //    这条判断以前就写在这儿,直接 `STAPLE_CHOICES.filter(Pantry.hasStaple)` ——
+      //    鲜主食搬去冰箱之后再那么问,红薯玉米就永远轮不上了。挪进 Pantry 里去答。
       if (typeof Nutrition !== 'undefined' && Nutrition.pickStaple) {
-        var ownedStaples = (typeof Pantry !== 'undefined' && Pantry.hasStaple)
-          ? Nutrition.STAPLE_CHOICES.filter(function (id) { return Pantry.hasStaple(id); })
+        var ownedStaples = (typeof Pantry !== 'undefined' && Pantry.availableGrains)
+          ? Pantry.availableGrains()
           : [];
         var stapleUsed = {};
         for (var pi = 0; pi < chosen.length; pi++) {

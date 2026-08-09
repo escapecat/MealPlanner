@@ -258,6 +258,15 @@ if (page === 'staples') {
   })[0];
   if (b) b.handlers.click[0]({ preventDefault: function () {} });
   else console.log('(没找到「调料柜」按钮)');
+
+  // 主食那一段勾过就默认收起 —— 第三个参数 grains 把它点开
+  if ((process.argv[3] || '') === 'grains') {
+    var g = appDiv.all().filter(function (el) {
+      return (el.handlers.click || []).length && /^主食/.test(dt(el));
+    })[0];
+    if (g) g.handlers.click[0]({ preventDefault: function () {} });
+    else console.log('(没找到「主食」折叠条)');
+  }
 }
 
 var lines = [];

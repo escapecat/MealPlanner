@@ -26,9 +26,16 @@ var T = Profile.perPlannedMeal(daily, 'light');
 var CONS = { equipment: ['炒锅', '空气炸锅', '电饭煲'], maxSpicy: 1, maxActiveMinutes: 45,
              maxDifficulty: 3, maxIdleWait: 60, allowOvernight: false, blacklist: [] };
 
-function run(staples) {
+function run(staples, fridge, prefs) {
   db = staples ? { staples: staples.map(function (id) { return { id: id }; }),
-                   staplesMigrated: true, staplesConfirmed: true } : {};
+                   staplesMigrated: true, staplesConfirmed: true,
+                   grainsSplitMigrated: true } : {};
+  db.grainPrefs = prefs || [];
+  // 鲜主食的库存走**冰箱**,不是柜子
+  db.pantryItems = Object.keys(fridge || {}).map(function (id, i) {
+    return { id: 'p' + i, ingredientId: id, amount: fridge[id],
+             addedAt: '2026-08-01T00:00:00.000Z', location: 'fridge' };
+  });
   Pantry.invalidate && Pantry.invalidate();
   var kinds = {}, allSame = 0, rounds = 0;
   for (var s = 0; s < 30; s++) {
@@ -49,12 +56,30 @@ function run(staples) {
 }
 
 // ⓪ 两份清单必须一模一样。
-//    Pantry.STARTER_GRAINS 是**你能勾的**,Nutrition.STAPLE_CHOICES 是**排菜会用的**。
-//    这儿多一样 → 勾了不生效;那儿多一样 → 排出来的东西你勾不上。
+//    Pantry.ALL_GRAINS 是**你能有的**,Nutrition.STAPLE_CHOICES 是**排菜会用的**。
+//    这儿多一样 → 有了不生效;那儿多一样 → 排出来的东西你哪儿都弄不进来。
 //    各写各的是迟早出事的写法。
-var a1 = Pantry.STARTER_GRAINS.slice().sort().join(',');
+var a1 = Pantry.ALL_GRAINS.slice().sort().join(',');
 var a2 = Nutrition.STAPLE_CHOICES.slice().sort().join(',');
-ok(a1 === a2, '能勾的主食和排菜会用的对不上 —— 柜子[' + a1 + '] 排菜[' + a2 + ']');
+ok(a1 === a2, '能有的主食和排菜会用的对不上 —— 你的[' + a1 + '] 排菜[' + a2 + ']');
+
+// ⓪a 干货和鲜的不许有交集,也不许漏 —— 漏掉的那样两个页面都不管,
+//     它就成了「排菜会用、但你无论如何弄不进来」的幽灵。
+var both = Pantry.GRAINS_DRY.filter(function (id) {
+  return Pantry.GRAINS_FRESH.indexOf(id) >= 0;
+});
+ok(both.length === 0, '同一样主食既算干货又算鲜的:' + both.join(' '));
+
+// ⓪c 分类判据不是我随口分的,是 tier —— **柜子里只能放放得住的东西**。
+//     红薯玉米保质 4-30 天,「你平时常备玉米吗」不是一句能回答的话。
+var notDry = Pantry.GRAINS_DRY.filter(function (id) {
+  var i = Catalog.ingredient(id); return !i || i.tier !== 'staple';
+});
+ok(notDry.length === 0, '柜子里放了放不住的东西(tier 不是 staple):' + notDry.join(' '));
+var notFresh = Pantry.GRAINS_FRESH.filter(function (id) {
+  var i = Catalog.ingredient(id); return !i || i.tier === 'staple';
+});
+ok(notFresh.length === 0, '当鲜主食的其实是干货,应该放柜子:' + notFresh.join(' '));
 
 // ⓪b 主食不能同时算蔬菜 —— 否则同一样东西两头计,蔬菜达标率凭空虚高。
 //     南瓜(26 kcal)和莲藕的 countsAsVeg 就是 true,所以主食用的是贝贝南瓜。
@@ -64,18 +89,53 @@ var vegAlso = Nutrition.STAPLE_CHOICES.filter(function (id) {
 });
 ok(vegAlso.length === 0, '这些主食同时算蔬菜,会两头计:' + vegAlso.join(' '));
 
-// ① 什么都没勾 → 还是白米。**不替用户假设他有糙米。**
+// ① 什么都没有 → 还是白米。**不替用户假设他有糙米。**
 //    「替用户假设他有什么」是这个项目开箱即勾 11 样调料时犯过的错。
 var a = run(null);
 ok(Object.keys(a.kinds).length === 1 && a.kinds['大米'],
    '储物柜空的时候配了白米以外的东西:' + JSON.stringify(a.kinds));
 
-// ② 勾了几样 → 真的轮换起来。这一条挂了就说明 solver 又没把 staple 传下去。
-var b = run(['rice', 'brown_rice', 'foxtail_millet', 'sweet_potato']);
+// ② 柜子里勾几样 → 真的轮换起来。这一条挂了就说明 solver 又没把 staple 传下去。
+var b = run(['rice', 'brown_rice', 'foxtail_millet', 'quinoa']);
 ok(Object.keys(b.kinds).length >= 3,
-   '勾了 4 样主食,排出来只有 ' + Object.keys(b.kinds).length + ' 种:' + JSON.stringify(b.kinds));
+   '勾了 4 样干货主食,排出来只有 ' + Object.keys(b.kinds).length + ' 种:' + JSON.stringify(b.kinds));
 ok(b.allSame < b.rounds * 0.2,
    b.allSame + '/' + b.rounds + ' 轮四顿还是同一种主食 —— 轮换没生效');
+
+// ②b **说了愿意吃红薯,就得真排上 —— 而且不用先有。**
+//
+// ⚠️ 这条是补给我自己造的一个洞。把鲜主食搬去冰箱之后,我一度把判据写成
+//    「冰箱里有才算」,听着很对(食材流转嘛),可它是个**死循环**:
+//    红薯不被排成主食 → 不会进采购清单 → 冰箱里永远没有 → 永远不会被排。
+//    而且是静默的:主食悄悄退回全白米,页面上一个字都不会提。
+//    「愿意吃」是偏好,「冰箱里有」是库存,两个都得算数。
+var c = run(['rice'], {}, ['sweet_potato']);
+ok(c.kinds['红薯'] > 0,
+   '勾了「愿意吃红薯」却一顿都没排上 —— 不排就不会买,不买就更不会排:' +
+   JSON.stringify(c.kinds));
+
+// ②c 冰箱里有就更该排上,**跟勾没勾过没关系** —— 那是这个 app 的立身之本
+var e = run(['rice'], { sweet_potato: 600 }, []);
+ok(e.kinds['红薯'] > 0,
+   '冰箱里躺着 600g 红薯,一顿都没排上:' + JSON.stringify(e.kinds));
+
+// ②d 反过来:既没说愿意吃、冰箱里也没有 → 不许排。不替你假设。
+var d = run(['rice'], {}, []);
+ok(!d.kinds['红薯'] && !d.kinds['玉米'],
+   '没说愿意吃、冰箱里也没有,却排了鲜主食 —— 那是替用户假设:' + JSON.stringify(d.kinds));
+
+// ②e 迁移:老用户在柜子里勾过的红薯要**挪进偏好**,不是删掉。
+//     ⚠️ 第一版我写的是直接删,理由是「不知道有几克,不能编数进库存」——
+//        理由对,结论错:那个勾从来就不是「我有几克红薯」,是「我愿意吃红薯」。
+//        删掉就是把用户说过的话扔了,而且正好掉进上面那个死循环。
+db = { staples: [{ id: 'rice' }, { id: 'sweet_potato' }, { id: 'salt' }],
+       staplesMigrated: true, staplesConfirmed: true, pantryItems: [] };
+Pantry.invalidate && Pantry.invalidate();
+Pantry.ensureInit();
+ok(!Pantry.hasStaple('sweet_potato'), '柜子里的红薯没迁走,调料柜里还会冒出一条「红薯」');
+ok(Pantry.wantsGrain('sweet_potato'), '迁移把「我愿意吃红薯」这句话弄丢了');
+ok(Pantry.hasStaple('rice') && Pantry.hasStaple('salt'), '迁移把不该动的也删了');
+ok(Pantry.availableGrains().indexOf('sweet_potato') >= 0, '迁移完红薯排不上了');
 
 // ③ 换主食要**按热量折算**,不能照抄 90g。
 //    红薯 86 kcal/100g,照抄 90g 只有 77 kcal —— 等于这顿没有主食。

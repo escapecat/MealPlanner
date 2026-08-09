@@ -518,6 +518,61 @@ var PantryUI = (function () {
     return row;
   }
 
+  /** 鲜主食那一行 —— 勾的是**愿不愿意吃**,不是「有没有」。
+   *
+   * ⚠️ 和上面的 pickRow 长得一样,但存的地方和意思都不同,所以不合并:
+   *    pickRow 写调料柜(我家有这个),这里写 grainPrefs(我愿意吃这个)。
+   *    红薯保质 30 天、玉米 4 天 ——「你平时常备玉米吗」不是一句能回答的话,
+   *    能回答的只有「愿不愿意吃」和「这周买了没有」,后者归冰箱管。 */
+  function grainPrefRow(ing) {
+    var want = Pantry.wantsGrain(ing.id);
+    var have = Pantry.totalOf(ing.id);
+    var row = h('div', {
+      class: 'list-row' + (want ? ' on' : ''),
+      onclick: function () { Pantry.toggleGrainPref(ing.id); render(); },
+    });
+    row.appendChild(h('span', { class: 'ck' }, ['✓']));
+    row.appendChild(h('div', { class: 'body' }, [
+      h('div', { class: 'ttl' }, [ing.name]),
+      h('div', { class: 'sub2' }, [
+        have > 0 ? '冰箱里有 ' + Math.round(have) + 'g —— 这轮会先用掉'
+                 : (want ? '会排上,也会出现在采购清单里' : '不排'),
+      ]),
+    ]));
+    return row;
+  }
+
+  /** 主食那一段的内容 —— 干货和鲜的分开,因为**买法不一样**。 */
+  function grainRows(w) {
+    w.appendChild(h('div', { class: 'hint', style: 'margin:8px 0 4px' },
+                    ['放得住的 —— 勾了就当你家常备,不会再出现在采购清单里']));
+    var dry = h('div', { class: 'list' });
+    Pantry.GRAINS_DRY.forEach(function (id) {
+      var ing = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
+      if (ing) dry.appendChild(pickRow(ing, true));
+    });
+    w.appendChild(dry);
+
+    w.appendChild(h('div', { class: 'hint', style: 'margin:12px 0 4px' },
+                    ['放不住的 —— 勾了就每轮买一份,冰箱里有的话先用掉']));
+    var fresh = h('div', { class: 'list' });
+    Pantry.GRAINS_FRESH.forEach(function (id) {
+      var ing = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
+      if (ing) fresh.appendChild(grainPrefRow(ing));
+    });
+    w.appendChild(fresh);
+  }
+
+  /** 现在会排哪些主食 —— 干货看柜子,鲜的看「愿意吃」和冰箱 */
+  function grainNames() {
+    return Pantry.availableGrains().map(function (id) {
+      var i = Catalog.ingredient(id);
+      var n = i ? i.name : id;
+      return (Pantry.GRAINS_FRESH.indexOf(id) >= 0 && Pantry.totalOf(id) > 0)
+        ? n + '(冰箱里有)' : n;
+    });
+  }
+
   function renderStaples(w) {
     Pantry.ensureInit();
     var mine = Pantry.staples() || [];
@@ -563,12 +618,7 @@ var PantryUI = (function () {
       w.appendChild(h('div', { class: 'note', style: 'margin-top:16px' }, [
         '**主食**。勾几样,计划里就会换着来 —— 只勾白米就顿顿白米饭。',
       ]));
-      var c1 = h('div', { class: 'card', style: 'padding:4px 16px' });
-      Pantry.STARTER_GRAINS.forEach(function (id) {
-        var ing = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
-        if (ing) c1.appendChild(pickRow(ing, true));
-      });
-      w.appendChild(c1);
+      grainRows(w);
       w.appendChild(h('button', {
         class: 'btn', style: 'margin-top:12px',
         onclick: function () { Pantry.setConfirmed(); render(); },
@@ -589,15 +639,12 @@ var PantryUI = (function () {
     //    搜索框虽然也能加,但它写的是「买了新调料?」—— 没人会想到
     //    去那儿找糙米。**功能藏在一个只出现一次的地方,等于没有。**
     if (!q) {
-      var owned = Pantry.STARTER_GRAINS.filter(function (id) { return Pantry.hasStaple(id); });
-      var ownedNames = owned.map(function (id) {
-        var i = Catalog.ingredient(id); return i ? i.name : id;
-      });
+      var gNames = grainNames();
       // ⚠️ 10 样常驻太占地方,而这东西**设一次基本不动**。
       //    默认:还没勾过 → 展开(不然你根本不知道有这回事);
-      //          勾过了   → 收起,标题右边直接列出勾了哪几样。
+      //          勾过了   → 收起,标题右边直接列出会排哪几样。
       //    收起的那行本身就把答案说完了,不用点开确认。
-      var gOpen = grainOpen === null ? owned.length === 0 : grainOpen;
+      var gOpen = grainOpen === null ? gNames.length === 0 : grainOpen;
       w.appendChild(h('div', {
         class: 'list-row' + (gOpen ? ' sticky' : ''),
         style: 'border:1px solid var(--border);border-radius:var(--r-md);' +
@@ -607,20 +654,15 @@ var PantryUI = (function () {
         h('div', { class: 'body' }, [
           h('div', { class: 'ttl' }, ['主食']),
           h('div', { class: 'sub2' }, [
-            !owned.length ? '一样都没勾 —— 排菜时默认配白米饭'
-              : ownedNames.join(' · ') +
-                (owned.length > 1 ? '(换着来)' : '(顿顿吃它)'),
+            !gNames.length ? '一样都没勾 —— 排菜时默认配白米饭'
+              : gNames.join(' · ') + (gNames.length > 1 ? '(换着来)' : '(顿顿吃它)'),
           ]),
         ]),
         h('span', { class: 'dim' }, [gOpen ? '▴' : '▸']),
       ]));
       if (gOpen) {
-        var gl = h('div', { class: 'list', style: 'margin-bottom:16px' });
-        Pantry.STARTER_GRAINS.forEach(function (id) {
-          var ing = INGREDIENTS.filter(function (x) { return x.id === id; })[0];
-          if (ing) gl.appendChild(pickRow(ing, true));
-        });
-        w.appendChild(gl);
+        grainRows(w);
+        w.appendChild(h('div', { style: 'height:16px' }));
       }
     }
 

@@ -550,7 +550,17 @@ var RoundsUI = (function () {
     render();
   }
 
-  /** 采购勾选 → 库存。以**实际克数**为准,没填就先按需求量记,回头改了会同步。 */
+  /** 采购勾选 → 库存。以**实际克数**为准,没填就先按需求量记,回头改了会同步。
+   *
+   * ⚠️ **干货不进冰箱,进调料柜。** 这是「为啥冰箱和调料柜都有大米」的真根因:
+   *    以前买什么都往 pantryItems 里塞,于是一袋米被当成一条冷藏库存记着、
+   *    旁边算着「买于 08-06」,而它本该是柜子里那条「我有大米」。
+   *    同一样东西在两个页面各存一份,还各说各的。
+   *
+   * ⚠️ 干货只加不减:取消勾选不会把它从柜子里拿走。柜子记的是「我家有大米」,
+   *    那件事不会因为你在清单上取消一个勾就变回没有 ——
+   *    要去掉走「···」→「记错了」。
+   */
   function syncPantry(round) {
     var tag = 'round:' + round.id;
     // 先清掉这一轮之前写进去的,再按当前状态重建 —— 避免反复勾选写重复
@@ -562,6 +572,11 @@ var RoundsUI = (function () {
       if (!t.bought) return;
       var g = t.actualGrams != null ? t.actualGrams : t.needGrams;
       if (!g) return;
+      var i0 = Catalog.ingredient(t.ingredientId);
+      if (i0 && i0.tier === 'staple') {
+        if (!Pantry.hasStaple(t.ingredientId)) Pantry.toggleStaple(t.ingredientId);
+        return;
+      }
       var it = Pantry.addFromPackage(
         { id: t.ingredientId, ingredientId: t.ingredientId, netWeight: g, unit: t.unit },
         now);
