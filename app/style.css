@@ -142,8 +142,22 @@ body {
 /* app.js 渲染完盖上这个 class —— 用 JS 而不是 CSS :last-child，
    因为好几页末尾是按钮或提示文字，CSS 选不中它前面那个列表，
    而直接拉伸最后一个元素会拉出一个巨高的按钮。 */
-/* .fill-rest 已废弃 —— 它靠拉伸最后一块列表填空白，而那依赖 .wrap 的
-   min-height，那一行会让短页面多出可滚动空间，切 tab 时忽有忽无。 */
+/* ⚠️ 内容区撑满之后（app.js 的 fitHeight 用**实测值**设 min-height），
+   .wrap 变成 flex 竖排，最后一块列表把多出来的空间吃掉 ——
+   不然撑开的只是一片空背景。
+   ⚠️ 必须配合实测高度：用 CSS 单位(100svh)猜的那一版会让页面
+   多出 34px 可滚动空间，切 tab 时忽能滑忽不能滑。 */
+.wrap { display: flex; flex-direction: column; }
+.fill-rest {
+  flex: 1 0 auto;
+  margin-bottom: calc(var(--s4) * -1);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.fill-rest > :last-child {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
 
 h1 { font-size: var(--t-lg); font-weight: 650; margin: var(--s1) 0 var(--s1);
      letter-spacing: -.01em; }
