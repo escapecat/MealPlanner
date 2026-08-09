@@ -136,7 +136,19 @@ body {
 /* app.js 渲染完盖上这个 class —— 用 JS 而不是 CSS :last-child，
    因为好几页末尾是按钮或提示文字，CSS 选不中它前面那个列表，
    而直接拉伸最后一个元素会拉出一个巨高的按钮。 */
-.fill-rest { flex: 1 0 auto; }
+.fill-rest {
+  flex: 1 0 auto;
+  /* ⚠️ 负外边距抵消 .wrap 的下内边距。光靠 flex:1 只能撑到内容盒底部，
+     而 .wrap 还有 16px padding-bottom —— 那就是列表底边和 tab 栏之间
+     剩下的最后一条缝。 */
+  margin-bottom: calc(var(--s4) * -1);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.fill-rest > :last-child {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
 
 h1 { font-size: var(--t-lg); font-weight: 650; margin: var(--s1) 0 var(--s1);
      letter-spacing: -.01em; }
