@@ -373,6 +373,65 @@ var SettingsUI = (function () {
     return box;
   }
 
+  /**
+   * 统计 —— **诊断式,不做称号**(FEATURES 第 28 条)。
+   *
+   * ⚠️ 第 26 条:**每个指标背后要能接一个动作**。
+   *    「累计做了 47 道菜」接不上任何动作,是虚荣指标,看两次就腻 —— 不做。
+   *    这里每条要么给一个能点的动作,要么就只是陈述一句,不占地方。
+   *
+   * ⚠️ 第 27 条:冷启动别给空页面,给**进度**。
+   *    但「别给空页面」不等于「可以给假结论」—— 一两轮数据也能算出
+   *    「叶菜浪费 100%」这种漂亮数字。所以没到样本量的**一个数都不给**,
+   *    只说还差几条。半成品的结论比没有更糟:你会照着它改设置。
+   */
+  function statsSection() {
+    var box = h('div', {});
+    var list = Stats.all();
+    var ready = list.filter(function (o) { return o.ready; });
+
+    if (!ready.length) {
+      box.appendChild(h('div', { class: 'note' }, [
+        '还没有够得着结论的数据。**做完一轮、顺手评几下**,这里就开始有东西了 —— ' +
+        '不够的时候我不会硬凑一个数给你。',
+      ]));
+    }
+
+    var ul = h('div', { class: 'list' });
+    list.forEach(function (o) {
+      var row = h('div', { class: 'list-row', style: 'flex-wrap:wrap' });
+      row.appendChild(h('div', { class: 'body', style: 'flex:1 0 100%' }, [
+        h('div', { class: 'ttl' }, [o.title]),
+        h('div', { class: 'sub2', style: o.level === 'warn' ? 'color:var(--warn)' : '' }, [
+          o.ready ? o.detail : '还差 ' + (o.need - o.have) + ' 条就能看',
+        ]),
+      ]));
+      if (o.ready && o.action) {
+        row.appendChild(h('div', {
+          class: 'note' + (o.level === 'warn' ? ' warn' : ''),
+          style: 'flex:1 0 100%;margin-top:8px',
+        }, [o.action]));
+      }
+      // 能一键做掉的,就给个按钮 —— 这才是「指标接得上动作」的意思
+      if (o.actionKind === 'exclude' && (o.payload || []).length) {
+        row.appendChild(h('button', {
+          class: 'btn ghost sm', style: 'flex:1 0 100%;margin-top:8px',
+          onclick: function () {
+            var cur = config().excludeRecipeIds || [];
+            var add = o.payload.filter(function (id) { return cur.indexOf(id) < 0; });
+            if (!add.length) return;
+            saveConfig({ excludeRecipeIds: cur.concat(add) });
+            Modal.note({ title: '排除了 ' + add.length + ' 道',
+                         body: '以后不会再排到它们。想改回来去「厨房与口味」。' });
+          },
+        }, ['把这 ' + o.payload.length + ' 道排除掉']));
+      }
+      ul.appendChild(row);
+    });
+    box.appendChild(ul);
+    return box;
+  }
+
   function dataSection() {
     var box = h('div', { class: 'card' });
     // 规格校准数只是个统计,不是功能入口 —— 所以放这儿一行,
@@ -485,6 +544,7 @@ var SettingsUI = (function () {
   var SECTIONS = [
     { id: 'body',    title: '身体数据与目标', render: bodySection },
     { id: 'kitchen', title: '厨房与口味',     render: kitchenSection },
+    { id: 'stats',   title: '看看数据说什么',  render: statsSection },
     { id: 'data',    title: '数据',           render: dataSection },
   ];
 
