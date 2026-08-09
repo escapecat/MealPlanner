@@ -90,15 +90,27 @@
     } else {
       RoundsUI.mount(page);
     }
+    fillRest(page);
     root.appendChild(page);
     root.appendChild(renderTabbar());
   }
 
-  /* ⚠️ 这里曾经有 fillRest / fitHeight，用来把内容区撑到 tab 栏。
-   *  撤掉了 —— 每一版都引入新毛病：撑高靠 CSS 单位猜会让短页面多出
-   *  可滚动空间（切 tab 上下跳）；改成实测之后，最后一个元素不是列表的
-   *  页面又会撑出一片空内边距，比不撑还空。
-   *  页面高度回到由内容决定。 */
+  /** 让内容里最后一块容器吃掉剩余空间。
+   *  ⚠️ 和之前失败的版本关键区别是**不算任何数值**:
+   *     .page(flex:1) → .wrap(flex:1) → 最后一块(flex:1)，靠 flex 传递。
+   *  ⚠️ 只标真正排在最后的那块容器 —— 后面还有按钮的话拉它，
+   *     等于把按钮推到最底下，中间空一大块。 */
+  function fillRest(page) {
+    var wrap = page.querySelector && page.querySelector('.wrap');
+    if (!wrap || (wrap.className || '').indexOf('wrap-fill') >= 0) return;
+    var kids = wrap.children || [];
+    var last = kids[kids.length - 1];
+    if (!last) return;
+    var c = (last.className || '');
+    if (c.indexOf('list') >= 0 || c.indexOf('card') >= 0) {
+      last.className = c + ' fill-rest';
+    }
+  }
 
 
 
