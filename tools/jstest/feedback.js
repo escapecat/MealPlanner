@@ -95,21 +95,39 @@ function deep(el) {
   if (el.tagName === '#TEXT') return el.text || '';
   return (el.text || '') + el.children.map(deep).join('');
 }
+/** 按可见文字点一个东西。
+ *
+ * ⚠️ **取匹配到的最里层,不是第一个。** deep(el) 把整棵子树的字连起来,
+ *    所以外层容器的文字里**包含**所有子孙的文字 —— 按 all() 的顺序取第一个,
+ *    命中的往往是外层。这坑过两次:
+ *      · 找「买齐了」先命中折叠条「采购清单 · 都买齐了」,于是只是把清单收起来了
+ *      · 找弹层里的选项先命中遮罩层,而点遮罩 = 取消 —— 表现成「点了没反应」
+ *    文字最短的那个就是最贴的那个。 */
 function click(root, re) {
-  var hit = root.all().filter(function (el) {
+  var hits = root.all().filter(function (el) {
     return (el.handlers.click || []).length && re.test(deep(el));
-  })[0];
-  if (hit) hit.handlers.click[0]({ preventDefault: function () {}, stopPropagation: function () {} });
+  }).sort(function (a, b) { return deep(a).length - deep(b).length; });
+  var hit = hits[0];
+  if (hit) hit.handlers.click[0]({ preventDefault: function () {}, stopPropagation: function () {},
+                                   target: hit });
   return !!hit;
 }
 
-// 走完整条真实路径:建轮 → 生成 → 开做 → 每道点做了 → 结束
+// 走完整条真实路径:建轮 → 生成 → 在清单上逐样勾 → 开做 → 每道点做了 → 结束
 var node = new El('div');
 ctx.RoundsUI.mount(node);
 click(node, /这次要做饭/);
 click(node, /记下这一次/);
 click(node, /生成采购清单/);
-click(node, /买齐了|开始做饭/);
+// ⚠️ 必须真的逐样勾「买了」。不勾就点「开始做饭」的话会弹一层问
+//    「还有 N 样没勾 —— 是忘了勾还是没买」,而弹层是 Promise,
+//    这个文件是同步的,答不了。买齐的路径本来也是主路径。
+node.all().filter(function (el) {
+  return (el.handlers.click || []).length && el.className === 'list-row' && /✓/.test(deep(el));
+}).forEach(function (el) {
+  el.handlers.click[0]({ preventDefault: function () {}, stopPropagation: function () {} });
+});
+ok(click(node, /^开始做饭$/), '找不到「开始做饭」');
 
 // ---- 0. 点完「做了」要**自动翻到下一顿** ----
 //

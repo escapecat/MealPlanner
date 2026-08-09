@@ -242,7 +242,10 @@ input:focus, select:focus {
   animation: modal-fade .16s var(--ease);
   backdrop-filter: blur(2px);
 }
-.modal-mask.closing { animation: modal-fade .14s var(--ease) reverse; }
+/* ⚠️ pointer-events:none 不能少。淡出这 140ms 里它**还在 DOM 里**,
+   不挡掉的话正在消失的那一层会把你紧接着的那一下点击吃掉 ——
+   表现成「点了没反应」,而且只在手快的时候出现,最难查的那种。 */
+.modal-mask.closing { animation: modal-fade .14s var(--ease) reverse; pointer-events: none; }
 @keyframes modal-fade { from { opacity: 0 } to { opacity: 1 } }
 
 .modal-sheet {

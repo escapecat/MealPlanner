@@ -52,9 +52,30 @@ var Round = (function () {
            '这时候该担心的不是剩,是买少了。';
   }
 
-  function newId(now) {
-    // 不用随机数 —— 同一天多开一轮时加后缀,保证可复现、可排序
-    return 'r' + now.slice(0, 10).replace(/-/g, '') + '-' + now.slice(11, 16).replace(':', '');
+  /** 轮次 id —— **必须唯一**,而且不能靠时间保证。
+   *
+   * ⚠️ 原来是 `r` + 日期 + 时分,注释写着「同一天多开一轮时加后缀」——
+   *    **意图写了,实现没做到**:那个「后缀」就是时分本身,不是计数器。
+   *    于是**同一分钟内建两轮,id 一模一样**。
+   *
+   *    后果比「重名难看」严重得多,因为到处都是 findIndex(x => x.id === r.id):
+   *      · 第二轮点「生成采购清单和菜」,结果**写进第一轮**把它覆盖掉;
+   *        第二轮自己永远停在 planning,点多少次都没反应
+   *      · seed = hashStr(r.id) + solveCount,同 id 就同种子,排出一模一样的菜
+   *      · 「做了」「删除这一轮」也都作用在第一条上
+   *    而且一个错都不会报 —— 你只会觉得「这个按钮点了没用」。
+   *
+   * ⚠️ 不用随机数(要可复现、可排序),用「同一分钟里的第几条」。
+   * @param existing 现有轮次,用来避重;不传就退回老行为 */
+  function newId(now, existing) {
+    var base = 'r' + now.slice(0, 10).replace(/-/g, '') + '-' + now.slice(11, 16).replace(':', '');
+    var taken = {};
+    (existing || []).forEach(function (r) { taken[r.id] = 1; });
+    if (!taken[base]) return base;
+    for (var n = 2; n < 1000; n++) {
+      if (!taken[base + '-' + n]) return base + '-' + n;
+    }
+    return base + '-' + now.slice(17, 19) + now.slice(20, 23);   // 兜底:补上秒和毫秒
   }
 
   /** 从上一轮 + 长期配置推出这一轮的默认输入 */
@@ -80,9 +101,9 @@ var Round = (function () {
     return d;
   }
 
-  function create(input, config, now) {
+  function create(input, config, now, existing) {
     return {
-      id: newId(now),
+      id: newId(now, existing),
       createdAt: now,
       status: 'planning',
       input: {

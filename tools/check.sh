@@ -33,12 +33,14 @@ done
 #   staples —— 一次性迁移写成每帧重算,把用户刚勾的当残留抹掉(勾了没反应)
 #   modal   —— 弹层挡在所有破坏性操作前面,confirm 认错返回值就会静默删数据
 #   flow    —— 「换掉这道菜」失败是静默的:排除没生效就又给你排同一道,不报错
+#   roundid —— 轮次 id 只到分钟,同一分钟建两轮就撞车,而撞车之后
+#              第二轮的生成结果会写进第一轮 —— 一个错都不报
 #   consume —— 买的时候算六项、扣的时候只扣一项:账目失衡不报错,
 #              只是库存越攒越多、下一轮反复给你排已经吃掉的东西
 #   boot    —— **白屏**。node --check 只查语法,运行时抛异常照样过;
 #              而页面一片空白时,除了控制台没有任何提示。这一条按 index.html
 #              的顺序真加载一遍再挨个挂载页面。
-for t in tools/jstest/staples.js tools/jstest/modal.js tools/jstest/flow.js tools/jstest/pinyin.js tools/jstest/timing.js tools/jstest/notes.js tools/jstest/recipebook.js tools/jstest/boot.js tools/jstest/settings.js tools/jstest/meal.js tools/jstest/snack.js tools/jstest/portion.js tools/jstest/staple.js tools/jstest/display.js tools/jstest/spacing.js tools/jstest/hierarchy.js tools/jstest/backup.js tools/jstest/feedback.js tools/jstest/stats.js tools/jstest/consume.js; do
+for t in tools/jstest/staples.js tools/jstest/modal.js tools/jstest/flow.js tools/jstest/pinyin.js tools/jstest/timing.js tools/jstest/notes.js tools/jstest/recipebook.js tools/jstest/boot.js tools/jstest/settings.js tools/jstest/meal.js tools/jstest/snack.js tools/jstest/portion.js tools/jstest/staple.js tools/jstest/display.js tools/jstest/spacing.js tools/jstest/hierarchy.js tools/jstest/backup.js tools/jstest/feedback.js tools/jstest/stats.js tools/jstest/consume.js tools/jstest/roundid.js; do
   [ -e "$t" ] || continue
   if ! node "$t" >/dev/null 2>&1; then
     echo "✗ 回归测试没过: $t"

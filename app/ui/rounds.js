@@ -218,7 +218,9 @@ var RoundsUI = (function () {
     var r = Round.create(
       { days: draft.days, perDay: draft.perDay, diners: draft.diners,
         overrides: draft.overrides },
-      config(), new Date().toISOString()
+      // ⚠️ 现有轮次必须传进去避重 —— id 只到分钟,同一分钟建两轮会撞车,
+      //    而撞车之后第二轮的生成结果会写进第一轮。见 Round.newId。
+      config(), new Date().toISOString(), rs
     );
     rs.push(r);
     saveRounds(rs);
@@ -562,6 +564,16 @@ var RoundsUI = (function () {
     saveRounds(rs);
     syncPantry(rs[k]);
     render();
+  }
+
+  /** 「都买了」时把还没勾的一次性记上 —— 见 nextStep 里那段 */
+  function markAllBought(r) {
+    var rs = rounds();
+    var k = rs.findIndex(function (x) { return x.id === r.id; });
+    if (k < 0) return;
+    (rs[k].solved.shopping || []).forEach(function (t) { t.bought = true; });
+    saveRounds(rs);
+    syncPantry(rs[k]);
   }
 
   function setActual(r, ingredientId, grams) {
@@ -1119,14 +1131,44 @@ var RoundsUI = (function () {
     var s = r.solved;
 
     if (r.status === 'shopping') {
-      var left = (s.shopping || []).filter(function (x) { return !x.bought; }).length;
+      var todo0 = (s.shopping || []).filter(function (x) { return !x.bought; });
+      var left = todo0.length;
       box.appendChild(h('div', { class: 'hint', style: 'margin-bottom:8px' }, [
         left ? '在超市边买边勾。买完了点下面开始做饭。'
              : '都买齐了 —— 可以开做了。',
       ]));
       box.appendChild(h('button', {
-        class: 'btn', onclick: function () { setStatus(r, 'cooking'); },
-      }, [left ? '买齐了,开始做饭(还有 ' + left + ' 样没勾)' : '开始做饭']));
+        class: 'btn',
+        onclick: function () {
+          if (!left) { setStatus(r, 'cooking'); return; }
+          // ⚠️ 这个按钮以前叫「**买齐了**,开始做饭(还有 7 样没勾)」,
+          //    点下去只改状态 —— **一样都不会进冰箱**。
+          //    说着「买齐了」却什么都没记,是这个 app 里最贵的一种沉默:
+          //    库存永远是空的,于是下一轮把你刚买的东西**再买一遍**。
+          //
+          // ⚠️ 但也不能默认全记上。「没勾」有两种截然不同的意思:
+          //      忘了勾   —— 东西买了,该进冰箱
+          //      没买     —— 货架上没有 / 我不想买它,那就是真没有
+          //    替用户猜哪一种,猜错任何一边都会让库存说假话 ——
+          //    而库存说假话不会报错,只会让下一轮排出来的菜莫名其妙。
+          //    所以问一句,两个答案都诚实。
+          Modal.pick({
+            title: '还有 ' + left + ' 样没勾',
+            hint: todo0.slice(0, 6).map(function (x) { return x.name; }).join(' · ') +
+                  (left > 6 ? ' 等 ' + left + ' 样' : ''),
+            options: [
+              { key: 'all', label: '都买了,只是忘了勾',
+                hint: '按需求量记进冰箱 —— 买多了回头在清单上填实际克数' },
+              { key: 'none', label: '这几样确实没买',
+                hint: '不记进冰箱。用到它们的那几道菜可能做不成' },
+            ],
+          }).then(function (v) {
+            if (v == null) return;                 // 取消 = 什么也没发生
+            if (v === 'all') markAllBought(r);
+            setStatus(r, 'cooking');
+          });
+        },
+      }, [left ? '开始做饭(还有 ' + left + ' 样没勾)' : '开始做饭']));
     } else if (r.status === 'cooking') {
       var meals = s.meals || [];
       var cooked = meals.filter(function (x) { return x.cooked; }).length;

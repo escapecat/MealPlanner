@@ -99,17 +99,25 @@ function deep(el) {
   if (el.tagName === '#TEXT') return el.text || '';
   return (el.text || '') + el.children.map(deep).join('');
 }
+/** 按可见文字点一个东西。
+ *
+ * ⚠️ **取匹配到的最里层,不是第一个。** deep(el) 把整棵子树的字连起来,
+ *    所以外层容器的文字里**包含**所有子孙的文字 —— 按 all() 的顺序取第一个,
+ *    命中的往往是外层。这坑过两次:
+ *      · 找「买齐了」先命中折叠条「采购清单 · 都买齐了」,于是只是把清单收起来了
+ *      · 找弹层里的选项先命中遮罩层,而点遮罩 = 取消 —— 表现成「点了没反应」
+ *    文字最短的那个就是最贴的那个。 */
 function click(root, re) {
-  var hit = root.all().filter(function (el) {
+  var hits = root.all().filter(function (el) {
     return (el.handlers.click || []).length && re.test(deep(el));
-  })[0];
-  if (hit) hit.handlers.click[0]({ preventDefault: function () {}, stopPropagation: function () {} });
+  }).sort(function (a, b) { return deep(a).length - deep(b).length; });
+  var hit = hits[0];
+  if (hit) hit.handlers.click[0]({ preventDefault: function () {}, stopPropagation: function () {},
+                                   target: hit });
   return !!hit;
 }
 
 
-var fail = 0;
-function ok(c, m) { if (!c) { console.log('  FAIL ' + m); fail++; } }
 function get(k) { return vm.runInContext('JSON.parse(JSON.stringify(Store.get("' + k + '",[])))', ctx); }
 function stock() {
   var s = {};
@@ -206,6 +214,72 @@ for (var round = 0; round < 8; round++) {
 //    而它失效的时候看起来和「全都对」一模一样。
 ok(sawStaple > 0, '四顿里一份自动配的主食都没量到 —— 这个文件等于没测主食');
 
-console.log(fail ? '库存扣减 ' + fail + ' 处不对'
-                 : '  库存扣减 ok(主食按克记账 · 米进常温不进冷藏 · 调料走柜子 · 做了六项都扣)');
-process.exit(fail ? 1 : 0);
+// ---- 4. 「还有 N 样没勾」怎么办 ----
+//
+// ⚠️ 这个按钮以前叫「**买齐了**,开始做饭(还有 7 样没勾)」,点下去只改状态,
+//    **一样都不会进冰箱**。说着「买齐了」却什么都没记,是这个 app 里最贵的
+//    一种沉默:库存永远是空的,下一轮把你刚买的东西**再买一遍**。
+//
+// ⚠️ 但也不能默认全记上。「没勾」有两种意思,而且截然相反:
+//      忘了勾 → 东西买了,该进冰箱
+//      没买   → 货架上没有 / 我不想买它,那就是真没有
+//    替用户猜哪一种,猜错任何一边库存都会说假话 —— 而库存说假话不报错,
+//    只让下一轮排出来的菜莫名其妙。所以问一句,两个答案都得真的做到。
+//
+// 弹层是 Promise,所以这一段是异步的,结果在最后统一收。
+function bodyClick(re) { return click(sandbox.document.body, re); }
+function newRound() {
+  click(node, /这次要做饭/);
+  click(node, /记下这一次/);
+  click(node, /生成采购清单/);
+}
+
+var before2 = stock();
+newRound();
+var left2 = (get('rounds').slice(-1)[0].solved.shopping || [])
+  .filter(function (x) { return !x.bought; }).length;
+ok(left2 > 0, '新一轮居然没有要买的东西,这一段测不到');
+
+// ⚠️ 弹层关闭有 140ms 淡出,期间**旧的那层还在 DOM 里**。
+//    测试连着开两个弹层的话,按文字找按钮会先摸到还没消失的旧层 ——
+//    点它等于点一个已经 resolve 过的 Promise,什么也不会发生。
+//    (这也是真的:所以 .modal-mask.closing 加了 pointer-events:none。)
+//    所以这里按真实节奏等一下,而不是靠微任务抢跑。
+function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+click(node, /^开始做饭/);
+ok(click(sandbox.document.body, /确实没买/), '「还有几样没勾」时没问一句就直接开做了');
+
+wait(200).then(function () {
+  ok(JSON.stringify(stock()) === JSON.stringify(before2),
+     '选了「确实没买」,东西却还是进了冰箱 —— 那库存就在说假话');
+  ok(get('rounds').slice(-1)[0].status === 'cooking', '选了「确实没买」却没开做');
+
+  // 再来一轮,这次答「都买了,只是忘了勾」
+  newRound();
+  var r3 = get('rounds').slice(-1)[0];
+  var want = (r3.solved.shopping || []).filter(function (x) { return !x.bought; });
+  var base = stock();
+  click(node, /^开始做饭/);
+  ok(click(sandbox.document.body, /都买了/), '找不到「都买了,只是忘了勾」');
+  return wait(200).then(function () {
+    var now2 = stock();
+    var missed = want.filter(function (t) {
+      // 调料走柜子不走冰箱,那是对的 —— 只查该进冰箱的
+      var i = vm.runInContext('JSON.stringify(Catalog.ingredient("' + t.ingredientId + '"))', ctx);
+      i = i ? JSON.parse(i) : null;
+      if (i && i.tier === 'staple' &&
+          !vm.runInContext('Pantry.isGrain("' + t.ingredientId + '")', ctx)) return false;
+      return !(now2[t.ingredientId] > (base[t.ingredientId] || 0));
+    });
+    ok(missed.length === 0,
+       '选了「都买了」,这几样却没进冰箱:' +
+       missed.map(function (t) { return t.name; }).join(' · ') +
+       ' —— 说着买齐了却什么都没记,下一轮会让你再买一遍');
+
+    console.log(fail ? '库存扣减 ' + fail + ' 处不对'
+                     : '  库存扣减 ok(主食按克记账 · 米进常温不进冷藏 · 调料走柜子 · ' +
+                       '做了六项都扣 · 没勾的会问一句)');
+    process.exit(fail ? 1 : 0);
+  });
+});
