@@ -60,7 +60,7 @@
       return h('button', {
         type: 'button',
         'aria-current': current === t.id ? 'page' : null,
-        onclick: function () { current = t.id; render(); },
+        onclick: function () { current = t.id; render(); Dom.toTop(); },
       }, [
         h('span', { class: 'ic' }, [t.icon]),
         h('span', {}, [t.label]),
