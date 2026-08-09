@@ -96,19 +96,30 @@
   }
 
   /** 让内容里最后一块容器吃掉剩余空间。
+   *
    *  ⚠️ 和之前失败的版本关键区别是**不算任何数值**:
    *     .page(flex:1) → .wrap(flex:1) → 最后一块(flex:1)，靠 flex 传递。
-   *  ⚠️ 只标真正排在最后的那块容器 —— 后面还有按钮的话拉它，
-   *     等于把按钮推到最底下，中间空一大块。 */
+   *
+   *  ⚠️ **只跳过「小尾巴」**:按钮、提示、说明文字。这些被推到底部是合理的
+   *     （移动端主操作本来就在底部）。而一旦遇到标题、另一个列表这类
+   *     「还有正文」的信号就放弃 —— 那说明这块容器不在末尾，
+   *     拉它会把后面的内容全挤到底部，中间空一大块，比原来还糟。 */
   function fillRest(page) {
     var wrap = page.querySelector && page.querySelector('.wrap');
     if (!wrap || (wrap.className || '').indexOf('wrap-fill') >= 0) return;
     var kids = wrap.children || [];
-    var last = kids[kids.length - 1];
-    if (!last) return;
-    var c = (last.className || '');
-    if (c.indexOf('list') >= 0 || c.indexOf('card') >= 0) {
-      last.className = c + ' fill-rest';
+    for (var i = kids.length - 1; i >= 0; i--) {
+      var el = kids[i];
+      var c = (el.className || '');
+      var tag = (el.tagName || '').toUpperCase();
+      if (c.indexOf('list') >= 0 || c.indexOf('card') >= 0) {
+        el.className = c + ' fill-rest';
+        return;
+      }
+      var isTail = tag === 'BUTTON' || tag === 'A' ||
+                   c.indexOf('hint') >= 0 || c.indexOf('note') >= 0 ||
+                   c.indexOf('link') >= 0 || c.indexOf('btn') >= 0;
+      if (!isTail) return;
     }
   }
 
