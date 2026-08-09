@@ -29,6 +29,22 @@ for src in $(grep -o 'src="[^"]*\.js"' app/index.html | sed 's/src="//;s/"//'); 
   [ -e "app/$src" ] || { echo "✗ index.html 引用了不存在的 $src"; fail=1; }
 done
 
+# 「添加到主屏幕」那一套引用的文件也得真的在。
+# ⚠️ 少一个的表现是**静默降级**:图标变成页面截图、打开时还挂着地址栏 ——
+#    不报错,而且只有在手机上才看得出来。
+for href in $(grep -o 'href="[^"]*\.\(png\|webmanifest\|css\)"' app/index.html \
+              | sed 's/href="//;s/"//'); do
+  [ -e "app/$href" ] || { echo "✗ index.html 引用了不存在的 $href"; fail=1; }
+done
+for icon in $(grep -o '"src": *"[^"]*"' app/manifest.webmanifest 2>/dev/null \
+              | sed 's/.*"src": *"//;s/"//'); do
+  [ -e "app/$icon" ] || { echo "✗ manifest 里引用了不存在的 $icon"; fail=1; }
+done
+# 根目录那一页只做转发,指过去的地方必须在
+if [ -e index.html ] && ! grep -q 'app/index.html' index.html; then
+  echo "✗ 根 index.html 没指向 app/index.html"; fail=1
+fi
+
 # 回归测试。加进来的都是「看代码看不出来、跑一遍才暴露」的那类:
 #   staples —— 一次性迁移写成每帧重算,把用户刚勾的当残留抹掉(勾了没反应)
 #   modal   —— 弹层挡在所有破坏性操作前面,confirm 认错返回值就会静默删数据

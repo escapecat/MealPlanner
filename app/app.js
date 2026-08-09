@@ -92,4 +92,16 @@
   }
 
   render();
+
+  // 离线缓存 —— 见 sw.js。
+  //
+  // ⚠️ Service Worker 只在**安全上下文**里能装(https 或 localhost),
+  //    所以局域网 http 直接访问时它不会注册 —— **也就不会拖累开发**:
+  //    改一行代码刷新就见效,不用担心缓存把旧版钉死。
+  // ⚠️ 双击 index.html(file://)同样装不了。那条路本来也不需要缓存。
+  // ⚠️ 注册失败一律吞掉:离线是加分项,不该因为它没起来就把整个页面搭进去。
+  if (typeof navigator !== 'undefined' && navigator.serviceWorker &&
+      typeof location !== 'undefined' && location.protocol !== 'file:') {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
 })();

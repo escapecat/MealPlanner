@@ -5,6 +5,19 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>一人食计划</title>
+
+<!-- 「添加到主屏幕」那一套。
+     ⚠️ iOS **不读 manifest** 里的 display / icon,得单独给下面这三行,
+        少了就会:图标变成页面截图、打开时顶上还挂着 Safari 的地址栏。
+     ⚠️ theme-color 影响的是状态栏那条颜色 —— 不给的话是白的,和绿色顶栏断开。 -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2f6f4e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="一人食">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
