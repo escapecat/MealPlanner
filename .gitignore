@@ -2,3 +2,6 @@ node_modules/
 *.log
 __pycache__/
 *.pyc
+
+# 扫描/模拟的临时输出 —— tools/_ 开头的一律不进仓库
+tools/_*
