@@ -157,12 +157,47 @@ var Solver = (function () {
       var poolSize = Math.min(eligible.length, Math.max(count * 4, 12));
       var top = eligible.slice(0, poolSize);
 
+      // ⚠️ **通用性一样的两样菜,包装规格可以差一倍。**
+      //    抽签原来只按 dishes(有多少道菜用它),而这一轮真正会用掉多少
+      //    取决于最小包装:4 份饭分 3 样蔬菜,每样需求约 133g ——
+      //        上海青 最小 250g → 用掉 53%
+      //        黄瓜   最小 500g → 用掉 27%
+      //    两者 dishes 接近,买黄瓜却注定扔掉四分之三。
+      //
+      //    多轮结转实测,这是浪费率的主因:黄瓜/茄子/南瓜出现过
+      //    「买 1000g 扔 1000g」——**买回来一口没动**。因为它们绝大多数
+      //    时候只能当配菜(黄瓜当主料 2 道、当配料 24 道),而配菜一顿
+      //    只用 80~100g,和 500g 的包装根本不在一个量级。
+      //
+      //    所以权重乘一个「这一包能用掉多少」的系数。保底 0.15:
+      //    再不匹配也不能把候选彻底踢出去,不然约束一紧就没得选了。
+      var fitOf = {};
+      top.forEach(function (c) {
+        var per0 = c.avgGrams || fallbackPerServing;
+        var need0 = Math.max(0, per0 * servingsPerPick - (stock[c.id] || 0));
+        if (need0 <= 0) { fitOf[c.id] = 1; return; }
+        var plan0 = (typeof Packaging !== 'undefined') ? Packaging.plan(c.id, need0) : null;
+        if (!plan0 || !plan0.total) { fitOf[c.id] = 1; return; }
+        fitOf[c.id] = Math.max(0.15, Math.min(1, need0 / plan0.total));
+      });
+      // ⚠️ 这里**试过**再乘一个「主料率」(asMain / dishes)去压低黄瓜那种
+      //    「只能当配菜」的蔬菜,理由是它们买回来用不掉。撤了 —— 那个理由
+      //    建立在一个假象上:当时 simulate 只扣主菜的食材、从不扣配菜的,
+      //    于是配菜的料全被算成「买了一口没动」。口径修正之后,配菜的料
+      //    是照常吃掉的,没有任何理由歧视配菜型蔬菜。
+      //    实测也确实更差(多轮过期率 13.8% → 16.5%)。
+      //
+      //    asMain 至今仍然只算不用 —— 保留它,但别再拿它当遮羞布。
+      var wOf = function (c) {
+        return c.dishes * (fitOf[c.id] == null ? 1 : fitOf[c.id]);
+      };
+
       while (n < count && top.length) {
         var tot = 0;
-        top.forEach(function (c) { tot += c.dishes; });
+        top.forEach(function (c) { tot += wOf(c); });
         var pickAt = rndV() * tot, acc2 = 0, sel = top.length - 1;
         for (var q = 0; q < top.length; q++) {
-          acc2 += top[q].dishes;
+          acc2 += wOf(top[q]);
           if (acc2 >= pickAt) { sel = q; break; }
         }
         var c = top.splice(sel, 1)[0];
@@ -191,9 +226,19 @@ var Solver = (function () {
     // 收到 3 + 4 的上限之后,同样 8 份只买 3 + 4,每样覆盖更多顿,零头摊薄。
     // 这也正是「主料复用、做法不重复」—— 少买几样、多变几种做法,而不是反过来。
     // ⚠️ 和「一样主料最多两顿」是配套的:4 顿 ÷ 每样最多 2 顿 = **至少** 2 样。
-    //    正好卡 2 样的话,只要有一样在阶段二被别的约束筛掉(忌口/厨具/难度),
-    //    剩下那样就得独扛四顿 —— 硬约束只能退化放行。多买一样是那条约束的余量。
-    var nProtein = Math.min(3, Math.max(2, Math.ceil(servings / 3) + 1));
+    //
+    // ⚠️ 这里原来是 `+ 1`(4 顿买 3 样),理由是「多买一样是那条约束的余量」——
+    //    怕有一样被阶段二筛掉,剩下那样独扛四顿。撤了 `+ 1`,因为余量的代价
+    //    在一人食场景下太贵:4 顿买 3 样蛋白,每样只摊到 1.33 顿 ≈ 233g,
+    //    而最小包装是 250~400g —— **每样都注定剩一截,而生鲜只放 1~2 天**。
+    //
+    //    312 轮体检对比(蛋白 3 样 → 2 样):
+    //        生鲜浪费   15.8% → 14.0%
+    //        半年吃到   48.1 道 → 49.2 道   ← 不降反升
+    //        排不出来   0 轮 → 0 轮        ← 担心的退化没有发生
+    //    多样性反而涨,是因为省下的采购额度让每样买得更整、更容易被排满,
+    //    而不是靠「多备一样」堆出来的。
+    var nProtein = Math.min(3, Math.max(2, Math.ceil(servings / 3)));
     var nVeg = Math.min(4, Math.max(2, Math.ceil(servings / 2)));
     // 要求候选至少能进 6 道菜 —— 太冷门的买回去没处使
     take(candidates(isProtein), nProtein, PROTEIN_PER_SERVING, 'protein', 6);
@@ -351,6 +396,15 @@ var Solver = (function () {
     effort: 1.2,         // 同等条件下选省事的
   };
 
+  // 一轮最多引入几味新调料。**这是「家里为什么全是调味料」的闸。**
+  // 26 轮 × 4 顿 × 3 场景 × 3 组种子实测(半年后柜子 / 吃到的菜 / 浪费率):
+  //     0 味 → 13.3 味  39.7 道  23.4%
+  //     1 味 → 18.9 味  41.3 道  22.8%   ← 取这个
+  //     2 味 → 27.7 味  41.7 道  24.2%
+  //    不限 → 44.2 味  42.6 道  26.1%
+  // 正常人家里 10~20 种调料,1 味/轮 落在里头,而且浪费率最低。
+  var DEFAULT_SEASONING_BUDGET = 1;
+
   function weightsOf(opts) {
     var w = {};
     Object.keys(DEFAULT_WEIGHTS).forEach(function (k) { w[k] = DEFAULT_WEIGHTS[k]; });
@@ -374,9 +428,19 @@ var Solver = (function () {
     //    这个项目已经在营养门槛那里踩过一次:宁可给一个「差一点但能吃」
     //    的结果,也不该整轮失败什么都不给。重罚保证了「有满足预算的组合
     //    就一定选它,全都超就选超得最少的」。
+    // ⚠️ **默认值属于消费者,不属于组装层。**
+    //    这个默认原来只写在 round.js 的 effectiveConstraints 里,于是任何
+    //    绕过它、直接调 Solver.solve 的地方(所有模拟脚本、体检、solver_smoke)
+    //    拿到的都是「不限」—— 体检测出半年后调料柜 30.9 味,而走生产路径
+    //    是 18.9 味。同一个求解器两套默认值,数字对不上还查不出原因。
+    //
+    // ⚠️ null 和 undefined **必须分开**:
+    //      null      = 你明确选了「不限」
+    //      undefined = 你还没表过态 → 用默认
+    //    原来写的是 `!= null`,两者都当成没设过 → 一律不限,默认形同虚设。
     var seasoningBudget = (opts && opts.constraints
-                           && opts.constraints.newSeasoningBudget != null)
-      ? opts.constraints.newSeasoningBudget : null;
+                           && opts.constraints.newSeasoningBudget !== undefined)
+      ? opts.constraints.newSeasoningBudget : DEFAULT_SEASONING_BUDGET;
     opts = opts || {};
     var have = {};
     var budget = {};

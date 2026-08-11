@@ -294,7 +294,20 @@ function multiRound(rounds, servingsPerRound, cfg, label) {
 
     var out = Solver.solve({
       servings: servingsPerRound, constraints: cfg,
-      stock: stock, mustUse: [],
+      stock: stock,
+      // ⚠️ **必须和 roundflow.js:94 一致** —— 那儿是
+      //    `Pantry.expiringSoon(3, nowIso)`,3 天内到期的强制排掉。
+      //    传空数组等于把「临期优先」整个关掉:买回来的菜没有任何机制
+      //    催它被吃,于是放到烂。实测多轮浪费率因此虚高一倍
+      //    (44% vs 真实值),而单轮模拟看不出来 —— 单轮压根没有库存。
+      //
+      //    这是第三次踩「模拟环境和生产环境不一致」了(前两次是漏
+      //    global.Meal、和统计 ofMeal 而不是 ch.nutrition)。
+      //    共同点都是:**不报错,只是安静地少做一件事**,
+      //    而数字看着都挺合理。
+      mustUse: Pantry.expiringSoon(3, nowIso).map(function (it) {
+        return it.ingredientId;
+      }),
       stockDetail: Pantry.stockSummary(nowIso),
       target: target, seed: r * 7919 + servingsPerRound,
       recentRecipeIds: recent,
@@ -317,10 +330,46 @@ function multiRound(rounds, servingsPerRound, cfg, label) {
       totalMeals++;
       if (seenRecipes[c.recipe.id]) repeats++;
       seenRecipes[c.recipe.id] = 1;
-      c.variant.ingredients.forEach(function (x) {
-        var g = Nutrition.gramsOf(x);
-        if (g != null) { Pantry.consume(x.ids[0], g, nowIso); totalEaten += g; }
+      // ⚠️ **消耗的口径必须和采购完全一致** —— 见 solver.js 的 finalizeShopping。
+      //    那边把配菜的食材、加量、缩量、补充项、配的那碗饭全算进采购清单
+      //    (不然到超市买不齐),这边只扣 c.variant 的话,差额会被算成
+      //    「过期扔掉」。
+      //
+      //    实测后果:茄子「买 2400g 扔 2400g」、黄瓜「买 1500g 扔 1420g」——
+      //    看着像求解器疯狂买用不掉的东西,可那些正是**配菜**的料:
+      //    买了、做了、吃了,只是这边从来没扣过。多轮浪费率因此虚高到 40%。
+      //
+      //    这是第四次踩「模拟和生产不一致」(漏 global.Meal · 统计 ofMeal 而不是
+      //    ch.nutrition · mustUse 传空 · 这次)。教训比前几次更具体:
+      //    **买和用必须照同一张单子**,任何一边多算少算,差额都会伪装成业务问题。
+      var vs = [c.variant];
+      if (c.side && c.side._cand) vs.push(c.side._cand.variant);
+      vs.forEach(function (v) {
+        v.ingredients.forEach(function (x) {
+          var g = Nutrition.gramsOf(x);
+          if (g != null) { Pantry.consume(x.ids[0], g, nowIso); totalEaten += g; }
+        });
       });
+      // 份量调整:缩了就少扣(还回库存),加了就多扣。removed 为负 = 加量
+      if (c.scale) {
+        c.scale.cuts.forEach(function (cut) {
+          if (cut.removed > 0) {
+            Pantry.addFromPackage({ id: cut.ingredientId, ingredientId: cut.ingredientId,
+                                    netWeight: cut.removed, unit: 'g' }, nowIso);
+            totalEaten -= cut.removed;
+          } else if (cut.removed < 0) {
+            Pantry.consume(cut.ingredientId, -cut.removed, nowIso);
+            totalEaten += -cut.removed;
+          }
+        });
+      }
+      if (c.boost) { Pantry.consume(c.boost.ingredientId, c.boost.added, nowIso);
+                     totalEaten += c.boost.added; }
+      if (c.topUp) { Pantry.consume(c.topUp.ingredientId, c.topUp.grams, nowIso);
+                     totalEaten += c.topUp.grams; }
+      var nuC = c.nutrition;
+      if (nuC && nuC.staple) { Pantry.consume(nuC.staple.ingredientId, nuC.staple.grams, nowIso);
+                               totalEaten += nuC.staple.grams; }
     });
 
     day += 7;
