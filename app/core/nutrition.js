@@ -276,12 +276,33 @@ var Nutrition = (function () {
 
     var cuts = [], saved = 0;
 
-    // 第一刀:**主食无条件归一化**,不管这顿超没超标。
+    // 第一刀:**主食按目标归一化 —— 双向的**,不管这顿超没超标。
     //
     // ⚠️ 这才是那个自相矛盾的地方。第一版只在超标时才缩,于是紫菜包饭
     //    从 1117 缩到 1044 就停手 —— 刚好压进宽容带,可米饭还是 250g,
     //    毛病一点没治。宽容带是「多吃一点没关系」,不是「250g 大米是对的」。
     //    250g 大米 ≈ 550g 米饭,一个人一顿吃这么多饭,不是减脂不减脂的问题。
+    //
+    // ⚠️ **第二版只会缩,不会补** —— 而这句注释写的是「按你的目标算一份」,
+    //    那本来就是双向的意思。200 场景实测的后果:热量达标率只有 35%,
+    //    中位 576 对目标 821,一天两顿少 490 kcal。整个系统里
+    //    「热量超了」有人管(这里)、「蛋白不够」有人管(portionBoost),
+    //    **唯独「热量不够」没有任何机制** —— 长期照这个吃是会掉秤的。
+    //
+    //    主食是热量最直接的杠杆(米面每 100g 三百多 kcal 而且便宜),
+    //    所以补也从这儿补。removed 为负 = 加量,下游三处接得住:
+    //    solver 还预算是 `+= removed`(负则少还),采购是 `-= removed`(负则多买),
+    //    只有 UI 文案要分方向写。
+    //
+    // ⚠️⚠️ **但这一刀只对 selfContained 的菜有效** —— 焖饭、盖饭、拌面那种
+    //    主食写在食材表里的。库里**绝大多数菜没有 role='staple' 的条目**:
+    //    番茄滑肉汤、芫爆里脊这些,米饭是 ofMeal 算营养时**虚拟补**的
+    //    (n.staple = {rice, 90g}),压根不在 variant.ingredients 里。
+    //    所以下面这个 forEach 对九成的菜是**空转**的。
+    //
+    //    实测热量缺口也确实不在主食:番茄滑肉汤 605 kcal 里虚拟米饭占 320,
+    //    菜本身只有 285;目标 821 扣掉主食份额 307,菜本身该有 514。
+    //    **缺的是菜不是饭。** 补主食解决不了,那属于菜谱份量的问题。
     (variant.ingredients || []).forEach(function (it) {
       if (it.role !== 'staple') return;
       var i = ing(it.ids[0]);
@@ -289,7 +310,20 @@ var Nutrition = (function () {
       var g = gramsOf(it);
       if (g == null || g <= 0) return;
       var want = Math.round(target.kcal * STAPLE_KCAL_SHARE / i.per100g.kcal * 100 / 10) * 10;
-      if (want >= g - 10) return;                // 本来就差不多,不动
+
+      if (want > g) {
+        // 补的方向要更保守:**只补到目标,不补到宽容带上沿**。
+        // 缩的时候可以按份额一刀切(吃多了就是吃多了),补的时候不行 ——
+        // 这一顿的非主食部分可能本来就重,再按份额加满就成了往上超标。
+        var deficit = target.kcal - n.kcal;
+        if (deficit <= 0) return;                     // 热量已经够,不加主食
+        var maxAdd = deficit / i.per100g.kcal * 100;
+        want = Math.round(Math.min(want, g + maxAdd) / 10) * 10;
+        if (want <= g + 10) return;                   // 补不到 10g 就别折腾
+      } else if (want >= g - 10) {
+        return;                                       // 本来就差不多,不动
+      }
+
       cuts.push({ ingredientId: i.id, name: it.names[0], from: g, to: want,
                   removed: g - want, kcal: Math.round((g - want) * i.per100g.kcal / 100),
                   protein: Math.round((g - want) * (i.per100g.protein || 0) / 100) });
