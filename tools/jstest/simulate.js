@@ -152,7 +152,14 @@ function run(limit) {
     out.stage2.chosen.forEach(function (ch) {
       stats.recipePicks[ch.recipe.id] = (stats.recipePicks[ch.recipe.id] || 0) + 1;
       maxT = Math.max(maxT, ch.variant.activeMinutes || 0);
-      var nu = Nutrition.ofMeal(ch.variant);
+      // ⚠️ **必须用 ch.nutrition,不能重新 ofMeal(ch.variant)。**
+      //    求解器对每一顿做过两道加工(solver.js 里 portionScale 归一化主食、
+      //    portionBoost 补蛋白/加主料),结果写回 ch.nutrition ——
+      //    那才是端上桌的那一份。
+      //    重新按原始菜谱算,等于**测量的不是交付的**:统计说「热量达标率 35%」,
+      //    而用户实际吃到的是另一个数。拿测不准的指标去调求解器,
+      //    调出来的东西只会更糟。
+      var nu = ch.nutrition || Nutrition.ofMeal(ch.variant);
       stats.kcal.push(nu.kcal);
       stats.protein.push(nu.protein);
       stats.veg.push(nu.veg);

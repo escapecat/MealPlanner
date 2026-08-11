@@ -123,6 +123,7 @@ var Round = (function () {
         maxDifficulty: config.maxDifficulty,
         maxIdleWait: config.maxIdleWait,
         allowOvernight: config.allowOvernight,
+        newSeasoningBudget: config.newSeasoningBudget,
         blacklist: (config.blacklist || []).slice(),
       },
       packages: [],      // 采购清单,勾「已买」后进库存
@@ -143,6 +144,19 @@ var Round = (function () {
       maxDifficulty: o.maxDifficulty != null ? o.maxDifficulty : config.maxDifficulty,
       maxIdleWait: o.maxIdleWait != null ? o.maxIdleWait : config.maxIdleWait,
       allowOvernight: o.allowOvernight != null ? o.allowOvernight : config.allowOvernight,
+      // 本轮最多引入几味新调料。null = 明确「不限」,undefined = 没设过。
+      //
+      // ⚠️ 这条是**采购策略**不是口味偏好,但它必须走同一条 overrides 通道 ——
+      //    「这周想试个新菜系,允许多买两瓶」是真实需求,而长期默认应该是紧的。
+      //
+      // ⚠️ **没设过要落到 1,不能落到 undefined。** 差别是天壤:
+      //    undefined 传下去等于「不限」,而设置页显示的默认是「1 味」——
+      //    界面说一套、跑起来另一套,老用户永远享受不到这个默认值。
+      //    (26 轮实测:默认 1 是 21 味,不限是 45 味。)
+      //    所以 null 和 undefined 在这儿**必须分开**:前者是你选的「不限」,
+      //    后者是「你还没表过态」。
+      newSeasoningBudget: o.newSeasoningBudget !== undefined ? o.newSeasoningBudget
+        : (config.newSeasoningBudget !== undefined ? config.newSeasoningBudget : 1),
       blacklist: (config.blacklist || []).concat(o.blacklistAdd || []),
       mustUse: o.mustUse || [],      // 临期库存,必须排掉
     };

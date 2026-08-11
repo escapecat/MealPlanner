@@ -359,6 +359,25 @@ var SettingsUI = (function () {
       '泡豆要泡一晚、腌隔夜的酱牛肉 —— 这类共 19 个变体。选「不接受」就不给你排。' +
       '注意「隔夜更佳」那种不算 —— 那是可选的,不会被拦'));
 
+    // ⚠️ 这一条是「为什么家里全是调味料」的闸门。
+    //    求解器原来只有一个 −4 的扣分,而**新口味加分是 +8** ——
+    //    用新调料的菜平均带 1.59 个口味标签,不用的只有 1.15,
+    //    于是「买瓶新的」净赚 4 分,每周都有动力去挑要新调料的菜。
+    //    半年模拟下来调料柜从 7 味涨到 60 味,每瓶用过一两次。
+    //
+    //    扣分只能让它「不容易被选中」,拦不住。这条是硬闸。
+    box.appendChild(row('每次最多买几味新调料',
+      seg(function () {
+            return cfg.newSeasoningBudget === undefined ? 1 : cfg.newSeasoningBudget;
+          },
+          function (v) { saveConfig({ newSeasoningBudget: v }); },
+          [{ v: 0, t: '一味都不买' }, { v: 1, t: '1 味' },
+           { v: 2, t: '2 味' }, { v: null, t: '不限' }]),
+      '**手上 7 味基础调料就能做 87 道菜,一周 4 顿够吃五个月。**' +
+      '不设上限的话,半年下来柜子里会有 60 来瓶,大部分只用过一两次 —— ' +
+      '浪费从冰箱搬到了柜子里。选「一味都不买」时,开头一两轮可能还是会买一两瓶' +
+      '(手上实在凑不出一周的菜),之后就稳住了。'));
+
     box.appendChild(blacklistEditor(cfg));
 
     box.appendChild(h('div', { class: c.dishes < c.total * 0.25 ? 'note warn' : 'note' }, [

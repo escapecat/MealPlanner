@@ -270,7 +270,86 @@ var Solver = (function () {
     return best ? best.id : null;
   }
 
+  // ---------------- 目标函数的权重 ----------------
+  //
+  // ⚠️ **集中在一处。** 散在表达式里的话没法整组替换,也就没法扫 ——
+  //    而这个项目定权重的规矩是扫过再定(见下面 extraItems 那段记录),
+  //    不是拍脑袋。
+  //
+  // 覆盖方式:solve({ weights: { missing: 25 } })。只给测试和扫描用,
+  // 线上永远走默认值。
+  var DEFAULT_WEIGHTS = {
+    waste: 100,          // 食材利用率,主项
+    method: 8,           // 做法多样性
+    flavor: 8,           // 味型多样性
+    mainRepeat: 30,      // 第三顿起的同一样主料
+    // 多拎回来一样东西 / 其中「剩的比用的多」的。权重扫过一遍
+    // (样数中位 · 买一包用一点 · 生鲜浪费 · 100 轮组合数):
+    //    0/0    → 12 样  5 样  29%  64 种
+    //    4/8    → 11 样  4 样  28%  58 种
+    //   12/24   → 10 样  3 样  22%  61 种
+    //   20/40   →  9 样  2 样  18%  65 种   ← 取这个
+    //   30/60   →  8 样  2 样  17%  60 种
+    //   50/100  →  8 样  2 样  17%  60 种(饱和)
+    // 20/40 是唯一一处**四个数一起变好**的:再往上样数还降,
+    // 但组合数从 65 掉到 60 —— 那就是开始拿「每周吃一样的」换清单短了。
+    extraItems: 20,
+    extraOver: 40,
+    // 本轮要新买的调料(去重后)。原来是 4 —— 只有 extraItems 的五分之一,
+    // 而实际持有成本正好反过来:一把青菜三天吃完,一瓶豆豉陪你一年。
+    //
+    // ⚠️ 更要命的是它和 flavor:+8 的关系。用新调料的菜平均带 1.59 个口味
+    //    标签,不用的只有 1.15 —— 典型情况是 +8 换 −4,**净赚 4 分**。
+    //    求解器每一轮都有动力去挑需要新调料的菜。
+    //
+    // 权重扫过一遍(26 轮 × 4 顿 × 3 场景 × 3 组种子 = 234 轮/档,
+    // 开局 7 味、买了的真进柜子):
+    //     4 → 60.7 味  52.0 道  23.8%
+    //     8 → 54.6 味  48.9 道  24.0%
+    //    12 → 52.8 味  49.0 道  22.7%
+    //    20 → 45.3 味  48.1 道  22.5%   ← 取这个,浪费率的最低点
+    //    25 → 44.1 味  47.9 道  23.4%
+    //    30 → 41.3 味  47.1 道  22.6%
+    //    40 → 34.1 味  47.2 道  24.5%   柜子还在降,浪费率却回升了
+    // (柜子 / 半年吃到的不同菜数 / 生鲜浪费率)
+    //
+    // ⚠️ **但别指望这一项能解决问题。** 权重从 4 提到 40(十倍),
+    //    半年后的柜子也才从 60 味降到 34 味 —— 正常人家里是 10~20 味。
+    //    扣分只能让「买新调料」变得不划算,拦不住它。真正的闸是
+    //    constraints.newSeasoningBudget(见 stage2)。
+    missing: 20,
+    untouched: 25,       // 买了一口没动的
+    urgentLeft: 0.15,    // 临期没排掉
+    short: 120,          // 营养缺口 —— 高于浪费,吃不饱比剩一点严重
+    effort: 1.2,         // 同等条件下选省事的
+  };
+
+  function weightsOf(opts) {
+    var w = {};
+    Object.keys(DEFAULT_WEIGHTS).forEach(function (k) { w[k] = DEFAULT_WEIGHTS[k]; });
+    var o = (opts && opts.weights) || {};
+    Object.keys(o).forEach(function (k) { if (o[k] != null) w[k] = o[k]; });
+    return w;
+  }
+
   function stage2(stage1Result, servings, opts) {
+    var W = weightsOf(opts);
+
+    // 本轮最多引入几味新调料。null = 不限。
+    //
+    // ⚠️ **这是闸,权重是方向盘。** 权重只让「买新调料」变得不划算,
+    //    可只要某道菜别的方面足够好,它照样被选中 —— 于是每周还是会
+    //    多出一两瓶。半年下来柜子里几十瓶,每瓶用过一两次。
+    //    预算回答的是另一个问题:「这周我就只想买一瓶」。
+    //
+    // ⚠️ 超预算**不淘汰组合,只重罚**。淘汰的话,约束一紧(厨具少、
+    //    忌口多、调料柜空)就可能所有组合都超预算 → 整轮排不出来。
+    //    这个项目已经在营养门槛那里踩过一次:宁可给一个「差一点但能吃」
+    //    的结果,也不该整轮失败什么都不给。重罚保证了「有满足预算的组合
+    //    就一定选它,全都超就选超得最少的」。
+    var seasoningBudget = (opts && opts.constraints
+                           && opts.constraints.newSeasoningBudget != null)
+      ? opts.constraints.newSeasoningBudget : null;
     opts = opts || {};
     var have = {};
     var budget = {};
@@ -304,14 +383,16 @@ var Solver = (function () {
         if (!allCovered) return;
         var g = variantUses(v, have);
         if (g <= 0) return;
+        var miss0 = (typeof Pantry !== 'undefined') ? Pantry.missingSeasonings(v) : [];
         cands.push({ recipe: e.recipe, variant: v, uses: g,
                      nutrition: (typeof Nutrition !== 'undefined')
                                 ? Nutrition.ofMeal(v) : null,
                      // 选了这道菜,要为它**额外开几包**、每包剩多少
                      extra: extraShopping(v, budget, pkgCache0),
                      mainProt: mainProteinOf(v),
-                     missing: (typeof Pantry !== 'undefined')
-                              ? Pantry.missingSeasonings(v).length : 0 });
+                     // ⚠️ **存 id,不只存个数** —— 汇总的时候要按 id 去重。
+                     //    个数在这一层是对的(这道菜缺几味),错在汇总。
+                     missingIds: miss0, missing: miss0.length });
       });
     });
     if (!cands.length) return { ok: false, reason: 'no-candidates' };
@@ -339,9 +420,9 @@ var Solver = (function () {
         //    而且叠回主菜时会重复计一碗饭的热量。
         var nu = (typeof Nutrition !== 'undefined') ? Nutrition.ofVariant(v) : null;
         if (typeof Meal !== 'undefined' && !Meal.isSimpleSide(v, nu, opts.target)) return;
+        var miss1 = (typeof Pantry !== 'undefined') ? Pantry.missingSeasonings(v) : [];
         sideCands.push({ recipe: e.recipe, variant: v, nutrition: nu,
-                         missing: (typeof Pantry !== 'undefined')
-                                  ? Pantry.missingSeasonings(v).length : 0 });
+                         missingIds: miss1, missing: miss1.length });
       });
     });
 
@@ -712,7 +793,25 @@ var Solver = (function () {
         return a + Math.max(0, mains[k] - 2);
       }, 0);
 
-      var missing = chosen.reduce(function (s, c) { return s + c.missing; }, 0);
+      // ⚠️ **按 id 去重,不是把每道菜的个数相加。**
+      //    两道菜都要豆豉 —— 你只买一瓶,相加却算成 2。
+      //
+      //    后果不止是「罚多了」。它让求解器**主动回避复用**:
+      //    同时选两道用豆豉的菜扣 8 分,选一道用豆豉、另一道用别的只扣 4 分。
+      //    于是每轮引进一味新调料、用一次就搁那儿,柜子越堆越满 ——
+      //    而这正是「买来买去家里全是调味料」的机制。
+      //
+      //    修成并集之后方向就反过来了:新调料被复用是**免费**的,
+      //    系统会自然倾向于把刚买的那瓶在同一轮里多用几次。
+      //
+      // ⚠️ roundflow 生成采购清单时一直是去重的(按 id 归并),所以清单
+      //    显示的「豆豉 ×1」从来没错过 —— 错的只有打分。
+      //    **显示正确、决策错误**,这种 bug 靠看界面永远发现不了。
+      var missSet = {};
+      chosen.forEach(function (c) {
+        (c.missingIds || []).forEach(function (id) { missSet[id] = 1; });
+      });
+      var missing = Object.keys(missSet).length;
       // 完全没被碰过的食材单独重罚 —— 买了一整包一口没吃,比每样剩一点糟得多
       var untouched = Object.keys(budget).filter(function (id) {
         return budget[id] > 0 && left[id] >= budget[id] - 1;
@@ -769,10 +868,10 @@ var Solver = (function () {
       });
       effort = effort / chosen.length;
 
-      var score = (1 - wasteRatio) * 100
-                + Math.min(methodCount, servings) * 8
-                + Math.min(flavorCount, servings) * 8
-                - mainRepeat * 30       // 第三顿起的同一样主料
+      var score = (1 - wasteRatio) * W.waste
+                + Math.min(methodCount, servings) * W.method
+                + Math.min(flavorCount, servings) * W.flavor
+                - mainRepeat * W.mainRepeat       // 第三顿起的同一样主料
                 // 多拎回来一样东西 / 其中「剩的比用的多」的。权重扫过一遍
                 // (样数中位 · 买一包用一点 · 生鲜浪费 · 100 轮组合数):
                 //    0/0    → 12 样  5 样  29%  64 种
@@ -783,13 +882,18 @@ var Solver = (function () {
                 //   50/100  →  8 样  2 样  17%  60 种(饱和)
                 // 20/40 是唯一一处**四个数一起变好**的:再往上样数还降,
                 // 但组合数从 65 掉到 60 —— 那就是开始拿「每周吃一样的」换清单短了。
-                - extraItems * 20
-                - extraOver * 40
-                - missing * 4
-                - untouched * 25
-                - urgentLeft * 0.15
-                - short * 120           // 权重高于浪费 —— 吃不饱比剩一点严重
-                - effort * 1.2;         // 同等条件下选省事的
+                - extraItems * W.extraItems
+                - extraOver * W.extraOver
+                // 新调料 —— 权重见 DEFAULT_WEIGHTS 上面那段扫描记录
+                - missing * W.missing
+                // 超出本轮预算的部分:每多一味 −10000。大到任何别的项都补不回来,
+                // 但仍然是**有限**的,所以全都超预算时还能比出「超得最少」的那个。
+                - (seasoningBudget == null ? 0
+                   : Math.max(0, missing - seasoningBudget) * 10000)
+                - untouched * W.untouched
+                - urgentLeft * W.urgentLeft
+                - short * W.short           // 权重高于浪费 —— 吃不饱比剩一点严重
+                - effort * W.effort;        // 同等条件下选省事的
 
 
 
