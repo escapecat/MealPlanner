@@ -26,7 +26,13 @@ global.Catalog = require(path.join(APP, 'core/catalog.js'));
 global.Packaging = require(path.join(APP, 'core/packaging.js'));
 global.Pantry = require(path.join(APP, 'core/pantry.js'));
 global.Nutrition = require(path.join(APP, 'core/nutrition.js'));
+// ⚠️ **Meal 必须加载。** solver.js 里配菜、主菜蛋白门槛、
+//    portionScale/portionBoost 全在 `if (typeof Meal !== 'undefined')` 里面 ——
+//    不加就**整块静默跳过**，模拟出来的是一个残缺的求解器：
+//    一道素菜能单独成顿、蔬菜 0g 也不配青菜、份量一律不缩不加。
+//    这条漏了的后果不是报错，是数字看着都对 —— 最难查的那种。
 var Profile = require(path.join(APP, 'core/profile.js'));
+global.Meal = require(path.join(APP, 'core/meal.js'));
 var Solver = require(path.join(APP, 'core/solver.js'));
 
 function ing(id) { return INGREDIENTS.filter(function (i) { return i.id === id; })[0]; }

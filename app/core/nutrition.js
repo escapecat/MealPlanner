@@ -14,6 +14,19 @@ var Nutrition = (function () {
   // 主食该占单顿热量的多少 —— 不是新数,是把已有默认值(90g 大米 ÷ 减脂男性单顿目标)写成比例
   var STAPLE_KCAL_SHARE = 311 / 832;
 
+  // 整道菜按目标放大时的上限。
+  //
+  // ⚠️ **必须有上限。** 库里 p10 的菜只有 91 kcal(凉拌黄瓜那种),
+  //    要把它顶到 514 得放大 5 倍 —— 那不是一顿饭,是一盆黄瓜。
+  //    差太多的菜本来就不该单独成顿,那是配菜位的活儿,不是放大能救的。
+  // 1.6 的依据:中位 338 × 1.6 = 541,刚好够到「菜本身该有 514」;
+  //    再往上收益快速衰减(p25 的菜就算翻 2 倍也够不着),
+  //    而食材翻倍会把一顿的菜量推到 700g 以上,一个人吃不完。
+  var MAX_UPSCALE = 1.6;
+
+  // 缺口小于这个比例就不折腾 —— 为了 50 kcal 把每样食材改成小数不值当
+  var UPSCALE_MIN_GAP = 0.15;
+
   var DEFAULT_STAPLE = 'rice';
   var STAPLE_GRAMS = 90;      // 生重。字典里 rice 的「单次用量」就是 90g
 
@@ -368,9 +381,48 @@ var Nutrition = (function () {
       }
     }
 
+    // 第三刀:前两刀走完还差得远,就**把整道菜按比例放大**。
+    //
+    // ⚠️ 这一刀补的是前两刀补不到的东西。主食归一化只管那碗饭,而实测
+    //    缺口根本不在饭:菜本身中位 338 kcal,一顿需要 514,
+    //    **只有 26% 的菜单独够一顿**。剩下四分之三不是挑得不好,
+    //    是库里那道菜的一人份就这么大 —— 打分挑不出库里没有的东西。
+    //
+    // ⚠️ 等比放大,不做「优先加肉」那种聪明事。菜谱的配比是设计过的,
+    //    150g 里脊配 100g 蒜苗是一道菜;单独把里脊加到 250g 就成了另一道。
+    //
+    // ⚠️ **不放大 aromatic**(蒜末姜片)和 staple。前者放大只会让蒜味压过
+    //    主料、还多买一头蒜;后者上面刚按份额归一化过,再乘一次等于推翻它。
+    var after = n.kcal - saved;
+    if (after > 0 && target.kcal - after > target.kcal * UPSCALE_MIN_GAP) {
+      var factor = Math.min(target.kcal / after, MAX_UPSCALE);
+      if (factor > 1.05) {
+        (variant.ingredients || []).forEach(function (it) {
+          if (it.role !== 'main' && it.role !== 'side') return;
+          var i2 = ing((it.ids || [])[0]);
+          if (!i2 || !i2.per100g) return;
+          var g2 = gramsOf(it);
+          if (g2 == null || g2 <= 0) return;
+          // 前两刀动过的不再动 —— 那些是按目标算准的,乘一下就毁了
+          for (var q = 0; q < cuts.length; q++) {
+            if (cuts[q].ingredientId === i2.id) return;
+          }
+          var to = Math.round(g2 * factor / 10) * 10;
+          if (to <= g2) return;
+          // removed 取负 = 加量。下游三处接得住(见上面第一刀的说明)
+          cuts.push({ ingredientId: i2.id, name: it.names[0], from: g2, to: to,
+                      removed: g2 - to,
+                      kcal: Math.round((g2 - to) * (i2.per100g.kcal || 0) / 100),
+                      protein: Math.round((g2 - to) * (i2.per100g.protein || 0) / 100) });
+        });
+      }
+    }
+
     if (!cuts.length) return null;
     return {
       cuts: cuts,
+      // ⚠️ 这两个数现在**可正可负**:正 = 净缩了多少,负 = 净加了多少。
+      //    UI 那边要按符号分方向写文案,不能再写死「−N kcal」。
       kcal: cuts.reduce(function (a, c) { return a + c.kcal; }, 0),
       protein: cuts.reduce(function (a, c) { return a + c.protein; }, 0),
     };

@@ -38,11 +38,16 @@ ok(sc && sc.cuts.some(function (c) { return c.to <= 100; }),
 ok(sc && sc.protein > 0, '缩份量居然没减少任何蛋白 —— 多半是护栏又被加回来了');
 
 // ③ 蔬菜和香料不许缩 —— 缩它们省不下热量,只是让你少吃菜。
+//
+// ⚠️ **只看 removed > 0 的。** cuts 现在是双向的:第三刀会把整道菜
+//    按目标放大,放大项也走 cuts,removed 取负。不分方向的话,
+//    「青菜 200→280g」会被判成「缩了蔬菜」—— 正好反了。
 RECIPES.slice(0, 200).forEach(function (r) {
   (r.variants || []).forEach(function (v) {
     var s = Nutrition.portionScale(v, Nutrition.ofMeal(v), T);
     if (!s) return;
     s.cuts.forEach(function (c) {
+      if (c.removed <= 0) return;                    // 负数 = 加量,不在这条管辖内
       var i = Catalog.ingredient(c.ingredientId);
       ok(!(i && i.countsAsVeg), r.name + ' 缩了蔬菜「' + c.name + '」');
     });

@@ -6,6 +6,10 @@ global.Equipment=require('../../app/core/equipment.js');
 global.Catalog=require('../../app/core/catalog.js');
 global.Packaging=require('../../app/core/packaging.js');
 global.Pantry=require('../../app/core/pantry.js');
+// ⚠️ Nutrition 和 Meal 必须加载 —— solver.js 里配菜、主菜蛋白门槛、
+//    份量缩放全在 `if (typeof Meal !== 'undefined')` 里面，不加就整块静默跳过。
+global.Nutrition=require('../../app/core/nutrition.js');
+global.Meal=require('../../app/core/meal.js');
 const Solver=require('../../app/core/solver.js');
 Pantry.ensureInit();
 const nm=id=>{const i=INGREDIENTS.find(x=>x.id===id);return i?i.name:id};
