@@ -10,6 +10,9 @@ global.Catalog=require(path.join(APP,'core/catalog.js'));
 global.Packaging=require(path.join(APP,'core/packaging.js'));
 global.Pantry=require(path.join(APP,'core/pantry.js'));
 global.Nutrition=require(path.join(APP,'core/nutrition.js'));
+// ⚠️ Meal 必须加载 —— solver 里配菜/蛋白门槛/份量缩放全在
+//    `if (typeof Meal !== 'undefined')` 里面,不加就整块静默跳过。
+global.Meal=require(path.join(APP,'core/meal.js'));
 var Profile=require(path.join(APP,'core/profile.js'));
 var Solver=require(path.join(APP,'core/solver.js'));
 

@@ -104,6 +104,32 @@ if grep -n "Store\.set(" app/ui/*.js | grep -v "^\S*: *[/*]" | grep -q .; then
   fail=1
 fi
 
+# 用 solver 的测试脚本,必须把 Meal 和 Nutrition 一起加载
+#
+# ⚠️ **这条防的是一个静默降级。** solver.js 里配菜、主菜蛋白门槛、
+#    份量缩放全都嵌在 `if (typeof Meal !== 'undefined')` 里面 ——
+#    脚本少 require 一个 core/meal.js,这一整块就悄悄跳过,
+#    **不报错、不警告,只是安静地少做一半的事**。
+#
+#    实际发生过:simulate / seasoning / seasoning_sweep / solver_smoke
+#    四个脚本全都漏了,于是长期在测一个残缺的求解器。假数字和真数字:
+#        生鲜浪费 29.9% → 17.3%     热量达标 35% → 89%
+#        蛋白达标  55%  → 100%      蔬菜达标 40% → 73%
+#    据此还做过一整轮「热量严重不足」的分析和一次方案选型 ——
+#    而那个问题根本不存在。
+#
+#    改动零影响本身就该是警报:同一个数字连着三次改动纹丝不动,
+#    不是改错了地方,是那段代码没在跑。
+for t in tools/jstest/*.js; do
+  grep -q "core/solver.js" "$t" || continue
+  for dep in meal nutrition; do
+    if ! grep -q "core/$dep.js" "$t"; then
+      echo "✗ $t 用了 solver 却没加载 core/$dep.js —— solver 会静默跳过那一整块"
+      fail=1
+    fi
+  done
+done
+
 if [ $fail -eq 0 ]; then
   echo "✓ 语法 · 数据层 · 脚本引用 · 回归测试 全部通过"
 else
