@@ -215,3 +215,36 @@ console.log('----------------------------------------------------------------');
 
 console.log('\n（验收标准:半年后柜子落在 10~20 味 —— 正常人家里的量。'
   + '60 味是餐厅备料柜,不是家）');
+
+
+// ---------------- 第三张表:预算 1 下再扫权重 ----------------
+//
+// ⚠️ **前两张表各自只动一个变量,而线上两个同时生效。**
+//    第一张表是在「不限预算」下扫权重的 —— 可默认预算是 1,
+//    硬闸已经把每轮的新调料卡死了,权重在闸门之内还剩多少作用?
+//    不测这一张,权重取值就是照着一个不存在的运行条件定的。
+console.log('');
+console.log('');
+console.log('============ 预算固定 1 味,再扫权重 ============');
+console.log('权重   半年后柜子   新增   每轮新增   菜品种类   浪费率   失败');
+console.log('----------------------------------------------------------------');
+[4, 12, 20, 30, 40].forEach(function (w) {
+  var acc = { finalStaples: 0, added: 0, perRound: 0, variety: 0, wasteRatio: 0, fails: 0 };
+  var n = 0;
+  SCENARIOS.forEach(function (sc) {
+    SEEDS.forEach(function (sd) {
+      var r = timeline({ missing: w }, ROUNDS, SERVINGS, sc.cfg, sd, 1);
+      acc.finalStaples += r.finalStaples; acc.added += r.added;
+      acc.perRound += r.perRound; acc.variety += r.variety;
+      acc.wasteRatio += r.wasteRatio; acc.fails += r.fails;
+      n++;
+    });
+  });
+  console.log(String(w).padStart(4)
+    + (acc.finalStaples / n).toFixed(1).padStart(12) + ' 味'
+    + (acc.added / n).toFixed(1).padStart(7)
+    + (acc.perRound / n).toFixed(2).padStart(10)
+    + (acc.variety / n).toFixed(1).padStart(11) + ' 道'
+    + (acc.wasteRatio / n * 100).toFixed(1).padStart(8) + '%'
+    + String(acc.fails).padStart(7));
+});

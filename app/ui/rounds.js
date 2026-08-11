@@ -1023,13 +1023,32 @@ var RoundsUI = (function () {
     // 主料加量 —— 直接改那一样的克数,比另外挂一样东西自然。
     // ⚠️ 必须显示原值:「鸡胸 150→220g」你才知道这是按你的目标调过的,
     //    只写 220g 的话,下次你翻菜谱页看到 150g 会以为哪儿错了。
-    // 份量缩回来了 —— 和加量一样必须显示原值,否则你翻菜谱页看到 250g 会以为哪儿错了。
+    // 份量按目标调过了 —— 和加量一样必须显示原值,否则你翻菜谱页看到 250g
+    // 会以为哪儿错了。
+    //
+    // ⚠️ **cuts 是双向的,文案必须分方向。** 缩(removed>0)和加(removed<0)
+    //    走的是同一个数组:主食归一化两个方向都有,第三刀「整道菜按目标放大」
+    //    一律是加。写死「缩了份量(−N kcal)」的话,加量那次会印出
+    //    「缩了份量:猪里脊 150g → 210g(−-93 kcal)」—— 数字和字全反了。
     if (m.scale && m.scale.cuts && m.scale.cuts.length) {
-      card.appendChild(h('div', { class: 'hint', style: 'margin-top:8px;color:var(--accent)' }, [
-        '按你的热量目标缩了份量:**' +
-        m.scale.cuts.map(function (x) { return x.name + ' ' + x.from + 'g → ' + x.to + 'g'; })
-          .join(' · ') + '**(−' + m.scale.kcal + ' kcal)',
-      ]));
+      var down = m.scale.cuts.filter(function (x) { return x.removed > 0; });
+      var up = m.scale.cuts.filter(function (x) { return x.removed < 0; });
+      var fmt = function (x) { return x.name + ' ' + x.from + 'g → ' + x.to + 'g'; };
+      var sumK = function (a) {
+        return Math.abs(a.reduce(function (t, x) { return t + x.kcal; }, 0));
+      };
+      if (down.length) {
+        card.appendChild(h('div', { class: 'hint', style: 'margin-top:8px;color:var(--accent)' }, [
+          '按你的热量目标缩了份量:**' + down.map(fmt).join(' · ') +
+          '**(−' + sumK(down) + ' kcal)',
+        ]));
+      }
+      if (up.length) {
+        card.appendChild(h('div', { class: 'hint', style: 'margin-top:8px;color:var(--accent)' }, [
+          '按你的热量目标加了份量:**' + up.map(fmt).join(' · ') +
+          '**(+' + sumK(up) + ' kcal)',
+        ]));
+      }
     }
 
     if (m.boost) {
