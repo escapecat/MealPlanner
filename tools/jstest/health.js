@@ -71,6 +71,8 @@ function timeline(cfg0, seed0) {
   var bought = 0, eaten = 0, expired = 0;
   var kcals = [], prots = [], vegs = [];
   var seen = {}, meals = 0, repeats = 0;
+  var freq = {};              // 每道菜吃了几顿
+  var overlapSum = 0, overlapN = 0;   // 相邻两轮的菜重合了几道
   var vegMainMeals = 0;          // 一顿只有一道素菜（人看着不像一顿饭）
   var log = [];
 
@@ -140,6 +142,18 @@ function timeline(cfg0, seed0) {
       if (c.topUp) { Pantry.consume(c.topUp.ingredientId, c.topUp.grams, nowIso); eaten += c.topUp.grams; }
       if (nu && nu.staple) { Pantry.consume(nu.staple.ingredientId, nu.staple.grams, nowIso); eaten += nu.staple.grams; }
     });
+    // ⚠️ **「半年吃到多少道」测不出腻。** 26 轮 × 4 顿 = 104 顿里吃到 49 道,
+    //    听着挺丰富 —— 可实际分布可以是「四道菜轮着上 20 周,最后几周才换」。
+    //    人感觉到的是**相邻几周重不重**,不是总数。
+    //    实测冷启动确实如此:第 1/2/4 轮几乎是同样四道菜。
+    if (log.length) {
+      var prev = log[log.length - 1];
+      if (prev.length && names.length) {
+        var hit = names.filter(function (x) { return prev.indexOf(x) >= 0; }).length;
+        overlapSum += hit / names.length; overlapN++;
+      }
+    }
+    names.forEach(function (x) { freq[x] = (freq[x] || 0) + 1; });
     log.push(names);
 
     day += 7;
@@ -163,6 +177,12 @@ function timeline(cfg0, seed0) {
     vegOK: vegs.filter(function (x) { return x >= TARGET.veg * 0.8; }).length / Math.max(1, vegs.length),
     staples: (Pantry.staples() || []).length,
     variety: Object.keys(seen).length,
+    topShare: (function () {
+      var f = Object.keys(freq).map(function (k) { return freq[k]; })
+        .sort(function (a, b) { return b - a; });
+      return f.slice(0, 4).reduce(function (a, b) { return a + b; }, 0) / Math.max(1, meals);
+    })(),
+    overlap: overlapN ? overlapSum / overlapN : 0,
     thin: vegMainMeals / Math.max(1, meals),
     fails: fails,
   };
@@ -170,7 +190,8 @@ function timeline(cfg0, seed0) {
 
 // ---------------- 跑 ----------------
 
-var acc = { waste: 0, kcalOK: 0, protOK: 0, vegOK: 0, staples: 0, variety: 0, thin: 0, fails: 0 };
+var acc = { waste: 0, kcalOK: 0, protOK: 0, vegOK: 0, staples: 0, variety: 0,
+            topShare: 0, overlap: 0, thin: 0, fails: 0 };
 var n = 0;
 SCENARIOS.forEach(function (sc) {
   SEEDS.forEach(function (sd) {
@@ -195,6 +216,10 @@ var LINES = [
   //    改之前是半年 44~60 味而且还在陡增 —— 那才是要治的病。
   ['半年后调料柜', acc.staples, 25, 'below', ' 味', '半年;两年饱和在 32 味上下'],
   ['半年吃到的菜', acc.variety, 40, 'above', ' 道', '一周 4 顿，不该三个月就重样'],
+  // ⚠️ 这两条才测得到「腻」。用户原话:「重复率怎么这么高」——
+  //    而当时「半年吃到 49 道」是达标的。总数达标 ≠ 不腻。
+  ['最常吃的 4 道占', acc.topShare * 100, 25, 'below', '%', '104 顿里最爱的四道该占几成'],
+  ['和上周重样', acc.overlap * 100, 30, 'below', '%', '这周四顿里有几道上周刚吃过'],
   ['「不像一顿饭」', acc.thin * 100, 5, 'below', '%', '没配菜且蛋白不到目标六成'],
   ['排不出来的轮次', acc.fails, 0.01, 'below', ' 轮', ''],
 ];
