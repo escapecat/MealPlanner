@@ -441,6 +441,27 @@ var Solver = (function () {
     var seasoningBudget = (opts && opts.constraints
                            && opts.constraints.newSeasoningBudget !== undefined)
       ? opts.constraints.newSeasoningBudget : DEFAULT_SEASONING_BUDGET;
+
+    // ⚠️ **冷启动豁免:柜子还空着的时候,扩池比省钱重要。**
+    //    预算 1 是给稳态用的 —— 那时候能做的菜已经上百道,每周添一味
+    //    是细水长流。但刚开始完全不同:
+    //        一口不粘炒锅 能做 191 道
+    //        只有 7 味调料一卡 → 实际只剩 39 道
+    //    39 道里再扣掉冷却期的 8 道,每周从 31 道里挑 4 顿 ——
+    //    用户的原话是「重复率怎么这么高」,而这就是原因:
+    //    **不是求解器挑得差,是池子太小。**
+    //
+    //    而预算 1 恰恰让池子长得最慢:每周只补一味,补到 12 味要五周,
+    //    那五周全在吃同一批菜。所以柜子少于 12 味时把闸开到 3 ——
+    //    12 是实测的拐点(7 味 39 道 → 12 味 58 道,+19)。
+    //
+    // ⚠️ 只在**没有显式设过**的时候豁免。你手动选了「一味都不买」,
+    //    那是明确表态,不该被系统偷偷改成 3。
+    if (typeof Pantry !== 'undefined' && Pantry.staples
+        && !(opts && opts.constraints && opts.constraints.newSeasoningBudget !== undefined)) {
+      var haveN = (Pantry.staples() || []).length;
+      if (haveN < 12) seasoningBudget = Math.max(seasoningBudget, 3);
+    }
     opts = opts || {};
     var have = {};
     var budget = {};

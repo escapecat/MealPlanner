@@ -72,6 +72,7 @@ function timeline(cfg0, seed0) {
   var kcals = [], prots = [], vegs = [];
   var seen = {}, meals = 0, repeats = 0;
   var freq = {};              // 每道菜吃了几顿
+  var famFreq = {};           // 「主蛋白 + 做法」这个家族吃了几顿
   var overlapSum = 0, overlapN = 0;   // 相邻两轮的菜重合了几道
   var vegMainMeals = 0;          // 一顿只有一道素菜（人看着不像一顿饭）
   var log = [];
@@ -154,6 +155,21 @@ function timeline(cfg0, seed0) {
       }
     }
     names.forEach(function (x) { freq[x] = (freq[x] || 0) + 1; });
+    // ⚠️ **菜名不同 ≠ 不重复。** 洋葱炒蛋 / 菠菜炒蛋 / 木耳炒蛋 / 韭菜炒蛋 /
+    //    番茄炒蛋 是五个 recipe.id,可对吃的人来说是同一道菜换个配料 ——
+    //    实测它们在 top 8 里占了五席。按 id 去重的指标看不见这件事,
+    //    人却一眼就腻。所以按「主蛋白 + 做法」归族再数一次。
+    out.stage2.chosen.forEach(function (c) {
+      var best = null;
+      (c.variant.ingredients || []).forEach(function (x) {
+        if (x.role !== 'main') return;
+        var i = INGREDIENTS.filter(function (y) { return y.id === (x.ids || [])[0]; })[0];
+        if (!i || !i.per100g || !(i.per100g.protein >= 10)) return;
+        if (!best || i.per100g.protein > best.p) best = { id: i.id, p: i.per100g.protein };
+      });
+      var fam = (best ? best.id : '素') + '|' + (c.recipe.method || '?');
+      famFreq[fam] = (famFreq[fam] || 0) + 1;
+    });
     log.push(names);
 
     day += 7;
@@ -183,6 +199,11 @@ function timeline(cfg0, seed0) {
       return f.slice(0, 4).reduce(function (a, b) { return a + b; }, 0) / Math.max(1, meals);
     })(),
     overlap: overlapN ? overlapSum / overlapN : 0,
+    famTop: (function () {
+      var f = Object.keys(famFreq).map(function (k) { return famFreq[k]; })
+        .sort(function (a, b) { return b - a; });
+      return (f[0] || 0) / Math.max(1, meals);
+    })(),
     thin: vegMainMeals / Math.max(1, meals),
     fails: fails,
   };
@@ -191,7 +212,7 @@ function timeline(cfg0, seed0) {
 // ---------------- 跑 ----------------
 
 var acc = { waste: 0, kcalOK: 0, protOK: 0, vegOK: 0, staples: 0, variety: 0,
-            topShare: 0, overlap: 0, thin: 0, fails: 0 };
+            topShare: 0, overlap: 0, famTop: 0, thin: 0, fails: 0 };
 var n = 0;
 SCENARIOS.forEach(function (sc) {
   SEEDS.forEach(function (sd) {
@@ -220,6 +241,7 @@ var LINES = [
   //    而当时「半年吃到 49 道」是达标的。总数达标 ≠ 不腻。
   ['最常吃的 4 道占', acc.topShare * 100, 25, 'below', '%', '104 顿里最爱的四道该占几成'],
   ['和上周重样', acc.overlap * 100, 30, 'below', '%', '这周四顿里有几道上周刚吃过'],
+  ['最大的「菜家族」', acc.famTop * 100, 20, 'below', '%', '同主料同做法算一族，如各种炒蛋'],
   ['「不像一顿饭」', acc.thin * 100, 5, 'below', '%', '没配菜且蛋白不到目标六成'],
   ['排不出来的轮次', acc.fails, 0.01, 'below', ' 轮', ''],
 ];
